@@ -26,7 +26,8 @@
 //!
 //! Il log L0 resta intatto: append-only, catena verificabile, replay del JSONL.
 
-use ariadne::{cycle, EventType, Log, Pcg64, State};
+use ariadne::prng::Pcg64;
+use ariadne::{cycle, EventType, Log, State};
 
 /// N di cicli per i test di storico.
 const N: u64 = 7;
