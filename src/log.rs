@@ -30,7 +30,9 @@ use crate::prng::Pcg64;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {
-    /// Rifiuto di schema: riga non canonica, membro mancante/doppio/non previsto,
+    /// Rifiuto di schema: riga non canonica (N3-bis: intero encoding della
+    /// riga — serialize(parse(line)) deve coincidere byte per byte),
+    /// membro mancante/doppio/non previsto,
     /// valori fuori dominio (float/bool/null/array/object nested), numeri con zero
     /// in testa o overflow, stringhe con caratteri di controllo grezzi, CR,
     /// stringhe con escape NON canonico (N3: solo l'encoding che il serializzatore
@@ -194,8 +196,13 @@ impl Log {
     }
 
     /// Riplay dal byte: parse rigoroso di schema (senza verifica di catena).
-    /// Accetta solo linee canoniche con '\n' finale; CR e righe vuote interne
-    /// sono rifiutate.
+    /// Accetta solo RIGHE CANONICHE con '\n' finale; CR e righe vuote interne
+    /// sono rifiutate. Canonica = il token sorgente coincide byte per byte con
+    /// `serialize(parse(line))` (event_line): l'ordine dei membri top-level,
+    /// l'ordine delle chiavi del payload e la forma dei numeri sono encoding,
+    /// e da esso `-0` è rifiutato tanto quanto un escape di stringa non
+    /// emesso (N3 + N3-bis). L'input senza newline finale resta accettato:
+    /// l'ultima riga è comunque un evento, il contratto non cambia.
     pub fn from_jsonl(input: &str) -> Result<Log, Error> {
         if input.contains('\r') {
             return Err(Error::Schema("CR vietato: nel log canonico solo LF".to_string()));
@@ -210,7 +217,7 @@ impl Log {
                 }
                 return Err(Error::Schema("riga vuota intermedia nel log".to_string()));
             }
-            events.push(parse_event(line)?);
+            events.push(canonical_line_or_err(line, parse_event(line)?)?);
         }
         if events.is_empty() {
             return Err(Error::Schema("log vuoto: nessuna riga evento".to_string()));
@@ -233,6 +240,28 @@ fn event_line(e: &Event) -> String {
     s.push_str(&e.hash);
     s.push_str("\"}");
     s
+}
+
+/// N3-bis — canonicità di RIGA: dopo il parse strutturale, la riga è canonica
+/// SOLO se `serialize(parse(line)) == line` byte per byte (ricomposizione via
+/// `event_line`, '\n' finale escluso — il parse riceve la singola riga senza
+/// newline). Controlla l'intero encoding della riga: ordine dei membri
+/// top-level, ordine delle chiavi del payload, forma dei numeri (`-0`) e delle
+/// stringhe (già coperta in `parse_string`). Motivazione del meccanismo: è il
+/// criterio dichiarato, misurato su un solo confronto; la canonicità
+/// posizionale sparge lo stesso vincolo su tre punti di parsing e richiede
+/// una prova d'equivalenza a parte sulle permutazioni.
+fn canonical_line_or_err(line: &str, event: Event) -> Result<Event, Error> {
+    let recomposed = event_line(&event);
+    if recomposed.as_bytes() != line.as_bytes() {
+        return Err(Error::Schema(
+            "riga non canonica: la riserializzazione di event_line non coincide byte-per-byte \
+             col token sorgente (ordine membri top-level / ordine chiavi payload / forma \
+             numerica non emessa dal serializzatore)"
+                .to_string(),
+        ));
+    }
+    Ok(event)
 }
 
 // ---------------------------------------------------------------------------
@@ -449,6 +478,9 @@ fn validate_hash64(s: &str, field: &str) -> Result<(), Error> {
 /// `\/`, hex maiuscolo, `\u` di caratteri emessi in altra forma, escape
 /// non necessari e coppie surrogate sono non canonici: logged esterno o è
 /// canonico o non entra (parse∘serialize = identità byte-per-byte).
+/// Da N3-bis lo stesso identità vale per l'INTERA RIGA, oltre che per il
+/// token: ordine membri, ordine chiavi payload e forma numerica sono
+/// controllati dalla ricomposizione in `canonical_line_or_err`.
 fn parse_string(c: &mut Cursor) -> Result<String, Error> {
     let start = c.i; // token completo, quote di apertura inclusa
     c.expect(b'"')?;
