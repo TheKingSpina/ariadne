@@ -9,7 +9,8 @@
 //! - log canonico JSONL: [`Log::to_jsonl`], [`Log::from_jsonl`].
 //!
 //! NON è in scope qui (dispatch esplicito): ciclo senso→azione→stato, policy,
-//! PRNG PCG64 completo, fold dello stato, livelli L1–L6.
+//! genesi con engine PCG64 attivo e snapshot di stato (dispatch B2), fold dello
+//! stato, livelli L1–L6.
 //!
 //! Determinismo: zero wall-clock, zero I/O esterna, zero reti, zero float.
 //! `tick` è un contatore logico di ciclo, mai un timestamp.
@@ -17,6 +18,8 @@
 mod event;
 mod log;
 mod payload;
+
+pub mod prng;
 
 pub use event::{compute_hash, Event, EventType, GENESIS_PREV_HASH};
 pub use log::{Error, Log};
