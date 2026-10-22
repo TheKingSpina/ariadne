@@ -25,14 +25,16 @@
 use std::fmt;
 
 use crate::event::{compute_hash, Event, EventType, GENESIS_PREV_HASH};
-use crate::payload::{Payload, Value};
+use crate::payload::{write_escaped, Payload, Value};
 use crate::prng::Pcg64;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {
     /// Rifiuto di schema: riga non canonica, membro mancante/doppio/non previsto,
     /// valori fuori dominio (float/bool/null/array/object nested), numeri con zero
-    /// in testa o overflow, stringhe con caratteri di controllo grezzi, CR.
+    /// in testa o overflow, stringhe con caratteri di controllo grezzi, CR,
+    /// stringhe con escape NON canonico (N3: solo l'encoding che il serializzatore
+    /// emette è ammesso).
     Schema(String),
     /// Catena non verificabile: seq con gap o non da 0, prev_hash disallineato,
     /// hash registrato diverso dal ricalcolo, compensazione verso seq inesistente.
@@ -438,9 +440,17 @@ fn validate_hash64(s: &str, field: &str) -> Result<(), Error> {
     Err(Error::Schema(format!("{}: atteso esadecimale minuscolo di 64 caratteri", field)))
 }
 
-/// Stringa JSON con escape standard (`\"`, `\\`, `\/`, `\b\t\n\f\r`, `\uXXXX`
-/// con coppie surrogate); caratteri di controllo grezzi vietati.
+/// Stringa JSON CANONICA (N3): ammette ESATTAMENTE l'encoding emesso da
+/// `payload::write_escaped` — `\"` `\\` `\b` `\t` `\n` `\f` `\r`; altri
+/// controlli <0x20 come `\uXXXX` con quattro cifre esadecimali MINUSCOLE;
+/// tutto il resto UTF-8 diretto (anche ≥0x7F e astrali, nessuna surrogate).
+/// Criterio del rifiuto: la riserializzazione canonica della stringa
+/// decodificata deve coincidere BYTE PER BYTE col token sorgente — così
+/// `\/`, hex maiuscolo, `\u` di caratteri emessi in altra forma, escape
+/// non necessari e coppie surrogate sono non canonici: logged esterno o è
+/// canonico o non entra (parse∘serialize = identità byte-per-byte).
 fn parse_string(c: &mut Cursor) -> Result<String, Error> {
+    let start = c.i; // token completo, quote di apertura inclusa
     c.expect(b'"')?;
     let mut out: Vec<u8> = Vec::new();
     loop {
@@ -488,7 +498,21 @@ fn parse_string(c: &mut Cursor) -> Result<String, Error> {
             }
         }
     }
-    String::from_utf8(out).map_err(|_| Error::Schema("stringa non UTF-8".to_string()))
+    let decoded = String::from_utf8(out).map_err(|_| Error::Schema("stringa non UTF-8".to_string()))?;
+    // N3 — canonico == solo ciò che il serializzatore emette: se il token
+    // sorgente non coincide con la riserializzazione canonica della stringa
+    // decodificata, il contenuto è lo stesso ma il BYTE è diverso: un tale log
+    // ri-serializzato non è byte-identico a se stesso → non entra.
+    let mut canonical = String::new();
+    write_escaped(&mut canonical, &decoded);
+    if canonical.as_bytes() != &c.b[start..c.i] {
+        return Err(Error::Schema(
+            "stringa non canonica: l'encoding non coincide con l'output del serializzatore \
+             (write_escaped): ogni forma di escape non emessa è rifiutata"
+                .to_string(),
+        ));
+    }
+    Ok(decoded)
 }
 
 fn push_rune(out: &mut Vec<u8>, code: u32) -> Result<(), Error> {
