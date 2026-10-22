@@ -127,9 +127,12 @@ mod tests {
 
     #[test]
     fn compute_hash_matches_documented_preimage() {
-        // preimage indipendente, costruito dal test, contro il golden precomputato
-        // esternamente (Python hashlib) per la genesi a seed 1042.
-        let payload = r#"{"prng":"PCG64","seed":1042,"state":1042}"#;
+        // preimage indipendente, costruito dal test, contro il golden ricalcolato
+        // esternamente con `shasum -a 256` (comando e output verbatim nel
+        // messaggio del commit N4); mai ricalcolato con compute_hash o to_jsonl.
+        // Formato canonico attuale (B2): `state` è la STRINGA decimale dello
+        // stato interno PCG64, non l'intero del payload (forma pre-B2 eliminata).
+        let payload = r#"{"prng":"PCG64","seed":1042,"state":"43149974864253806286336044685702662359"}"#;
         let mut expected_pre = Vec::new();
         expected_pre.extend_from_slice(b"0");
         expected_pre.push(0x1F);
@@ -140,7 +143,7 @@ mod tests {
         expected_pre.extend_from_slice(payload.as_bytes());
         expected_pre.push(0x1F);
         expected_pre.extend_from_slice(GENESIS_PREV_HASH.as_bytes());
-        let golden = "e73ef6c4d12742137235c98bf4427abc43bc123de12614806929b5e101721e97";
+        let golden = "4649d1f4889db0378e963bd51f9d787eea98dc42886e66e51973f28e593526b7";
         assert_eq!(to_hex(&Sha256::digest(&expected_pre)), golden);
         assert_eq!(
             compute_hash(0, 0, EventType::State, payload, GENESIS_PREV_HASH),
