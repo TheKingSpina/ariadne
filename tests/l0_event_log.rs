@@ -384,7 +384,7 @@ fn test_compensating_payload_carries_most_recent_state_snapshot_exact() {
     let history_before = log.to_jsonl();
 
     let comp = log.compensate(1, "stimolo errato: era 42", 2).unwrap();
-    assert_eq!(comp.seq, 2);
+    assert_eq!(comp.seq, 3, "l'evento compensativo è IN CODA: seq = ultimo + 1 = 3 (compensava il SENSE seq 1)");
     assert_eq!(comp.r#type.as_str(), "STATE", "l'evento compensativo è STATE");
     assert_eq!(
         comp.payload.canonical(),
