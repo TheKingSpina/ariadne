@@ -116,3 +116,36 @@ L'approvazione umana è l'unico passaggio che le rende esercitabili.
   `models` senza `all` mostra solo l'ultima versione per famiglia, e l'audit ha rischiato
   di dichiarare `nemotron-3-ultra-free` «sparito» quando era `active`. Prima di sostituire
   un modello pinnato, verificare con `all: true`.
+- **Il server MCP non regge le raffiche**: tredici `memory_review_decision` in parallelo
+  hanno chiuso la connessione (404 sull'endpoint), le stesse tredici in sequenza sono
+  passate tutte. Le chiamate di governance si fanno una alla volta.
+
+## Chiusura del run (22 ottobre)
+- **Addendum v0.3 firmato** (umano + orchestratore) → `spec/L0_SPEC_v0.3.md`. La v0.2
+  porta una nota di rimando; la proposta in `notes/` è marcata PROMOSSA e conservata.
+  Prima della firma il testo è stato **verificato contro il codice** (moltiplicatore,
+  costanti splitmix64, funzione di output post-avanzamento): un addendum che descrive
+  intenzioni invece del codice è peggio di un addendum mancante.
+- **L0 si chiude senza violazioni note.** L'unica rilevata dal reviewer (§3, payload a
+  tre chiavi contro due) è risolta da E1, che ora ha rango di legge. L'accettazione
+  resta dell'umano: nessun agente l'ha firmata.
+- **Mnemosyne**: 13 decisioni prese (10 approvate, 3 respinte perché superate dai fatti
+  — `mem_a4e1c04c` chiusa da N3, `mem_e3378b2c` sottoinsieme di N3-bis, `mem_a4902419`
+  risolta da `45ad98d`). Una quarta, `mem_8cd8db39`, era superata ma conteneva una
+  lezione giusta (il seed è un contatore `i64`, il wrap silenzioso è vietato): approvata
+  con il contenuto riscritto all'esito reale, invece di respinta.
+- **Protocollo adottato**: la revisione delle pending è il **primo passo** di ogni nuovo
+  run. `memory_context` restituisce solo le memorie approvate, quindi una proposta in
+  attesa è invisibile al richiamo successivo — tredici proposte accumulate valevano zero.
+- **Golden doppio**: tenuti entrambi. Il unitario è l'unica prova del preimage costruito
+  a mano senza passare da `Log::genesis`/`to_jsonl`; l'integrazione è l'unica prova del
+  percorso pubblico end-to-end. Coperture diverse, non ridondanza.
+- **Storia del repository**: tre commit separati dal codice — legge (`a314d54`),
+  infrastruttura agenti (`4469f0f`), documentazione (`886ba57`), più questo di chiusura.
+  Il codice resta ai commit degli agenti; l'indice è pulito.
+- **Deroga dichiarata**: l'orchestratore ha eseguito i commit fuori dalla propria
+  whitelist git read-only, su istruzione esplicita dell'umano. La whitelist e la realtà
+  divergono: o si estende al commit, o il commit resta un gesto umano. Da decidere.
+- **Tre proposte nuove in attesa** (`mem_b86cc195` la v0.3 è legge, `mem_1202a4da` il
+  protocollo di revisione, `mem_a29472ba` la convenzione git). Non le ho approvate:
+  l'approvazione è dell'umano, e sono nuove. Saranno il primo oggetto del prossimo run.
