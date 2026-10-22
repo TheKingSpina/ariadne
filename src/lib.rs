@@ -6,19 +6,21 @@
 //!   con preimage separato da 0x1F (encoding documentato in [`event`] e fissato dai test);
 //! - genesi con seed: [`Log::genesis`], payload {seed, prng: "PCG64", state esplicito};
 //! - append-only e correzioni compensative: [`Log::append`], [`Log::compensate`], [`Log::verify`];
-//! - log canonico JSONL: [`Log::to_jsonl`], [`Log::from_jsonl`].
+//! - log canonico JSONL: [`Log::to_jsonl`], [`Log::from_jsonl`];
+//! - ciclo senso→azione→stato (dispatch B4, sezione "Ciclo" della SPEC + riga 44
+//!   dello Schema PRNG): [`cycle::run_cycle`] / [`cycle::run_cycles`], 3 eventi
+//!   per tick, budget draw esplicito (1 dal SENSE, 0 dalla policy, 0 dalla genesi).
 //!
-//! NON è in scope qui (dispatch esplicito): ciclo senso→azione→stato, policy,
-//! genesi con engine PCG64 attivo e snapshot di stato (dispatch B2), fold dello
-//! stato, livelli L1–L6.
+//! NON è in scope qui (dispatch esplicito): policy oltre la stub `parse % 3`,
+//! livelli L1–L6.
 //!
 //! Determinismo: zero wall-clock, zero I/O esterna, zero reti, zero float.
 //! `tick` è un contatore logico di ciclo, mai un timestamp.
 
+pub mod cycle;
 mod event;
 mod log;
 mod payload;
-
 pub mod prng;
 pub mod state;
 
