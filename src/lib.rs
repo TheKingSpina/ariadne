@@ -1,0 +1,23 @@
+//! Ariadne L0 — substrato: log append-only aciclico.
+//!
+//! Contenuto di questo crate (scope del dispatch: SPEC L0 v0.2 §2 e §3 + genesi §4):
+//! - schema evento {seq, tick, type, payload, prev_hash, hash} ([`Event`], [`EventType`]);
+//! - catena di hash: `hash = SHA-256(seq ‖ tick ‖ type ‖ payload ‖ prev_hash)`
+//!   con preimage separato da 0x1F (encoding documentato in [`event`] e fissato dai test);
+//! - genesi con seed: [`Log::genesis`], payload {seed, prng: "PCG64", state esplicito};
+//! - append-only e correzioni compensative: [`Log::append`], [`Log::compensate`], [`Log::verify`];
+//! - log canonico JSONL: [`Log::to_jsonl`], [`Log::from_jsonl`].
+//!
+//! NON è in scope qui (dispatch esplicito): ciclo senso→azione→stato, policy,
+//! PRNG PCG64 completo, fold dello stato, livelli L1–L6.
+//!
+//! Determinismo: zero wall-clock, zero I/O esterna, zero reti, zero float.
+//! `tick` è un contatore logico di ciclo, mai un timestamp.
+
+mod event;
+mod log;
+mod payload;
+
+pub use event::{compute_hash, Event, EventType, GENESIS_PREV_HASH};
+pub use log::{Error, Log};
+pub use payload::{Payload, Value};

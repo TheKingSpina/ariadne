@@ -151,10 +151,10 @@ fn test_payload_canonical_sorted_keys_minimal() {
     // chiavi inserite in ordine che NON è alfabetico: l'output deve ordinare
     let p = Payload::from_pairs(vec![
         ("zeta", Value::Int(-3)),
-        ("alpha", Value::Str("s")),
+        ("alpha", Value::Str("s".to_string())),
         ("mik", Value::Int(7)),
         ("compensates", Value::Int(1)),
-        ("reason", Value::Str("lo scoglio")),
+        ("reason", Value::Str("lo scoglio".to_string())),
     ]);
     assert_eq!(
         p.canonical(),
@@ -259,7 +259,7 @@ fn test_replay_prefix_byte_per_byte() {
     let build = || {
         let mut log = Log::genesis(1000);
         log.append(1, EventType::Sense, Payload::from_pairs(vec![("stimolo", Value::Int(42))])).unwrap();
-        log.append(1, EventType::Action, Payload::from_pairs(vec![("mossa", Value::Str("V"))])).unwrap();
+        log.append(1, EventType::Action, Payload::from_pairs(vec![("mossa", Value::Str("V".to_string()))])).unwrap();
         log.append(2, EventType::State, Payload::from_pairs(vec![("gain", Value::Int(6))])).unwrap();
         log
     };
