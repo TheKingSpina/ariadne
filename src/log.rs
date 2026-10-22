@@ -465,13 +465,13 @@ fn parse_u4x(c: &mut Cursor) -> Result<u32, Error> {
 mod tests {
     use super::*;
 
-    /// Parser: la riga genesi canonica si compone.
+    /// Parser: la riga genesi canonica si compone (formato B2: state stringa).
     #[test]
     fn genesis_line_parses() {
         const GENESIS_1042_LINE: &str = concat!(
-            r#"{"seq":0,"tick":0,"type":"STATE","payload":{"prng":"PCG64","seed":1042,"state":1042},"#,
+            r#"{"seq":0,"tick":0,"type":"STATE","payload":{"prng":"PCG64","seed":1042,"state":"43149974864253806286336044685702662359"},"#,
             r#""prev_hash":"0000000000000000000000000000000000000000000000000000000000000000","#,
-            r#""hash":"e73ef6c4d12742137235c98bf4427abc43bc123de12614806929b5e101721e97"}"#,
+            r#""hash":"4649d1f4889db0378e963bd51f9d787eea98dc42886e66e51973f28e593526b7"}"#,
         );
         let log = Log::from_jsonl(&format!("{GENESIS_1042_LINE}\n")).expect("riga genesi valida");
         assert_eq!(log.events().len(), 1);

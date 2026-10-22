@@ -19,13 +19,22 @@ use ariadne::{EventType, Log, Payload, Value};
 const ZERO64: &str = "0000000000000000000000000000000000000000000000000000000000000000";
 
 /// Hash di riferimento della genesi seed 1042, precomputato a mano
-/// (SHA-256 del preimage sopra documentato, calcolato indipendentemente dal crate).
-const GENESIS_1042_HASH: &str = "e73ef6c4d12742137235c98bf4427abc43bc123de12614806929b5e101721e97";
+/// (SHA-256 del preimage sopra documentato, calcolato indipendentemente dal
+/// crate con `shasum -a 256` su byte scritti a mano — nessuna funzione del crate).
+///
+/// Formato B2 (dispatch, chiude D1): `state` è la STRINGA decimale dello stato
+/// interno PCG64 a 128 bit (`Pcg64::new(1042).state_decimal()`), non più un intero.
+const GENESIS_1042_HASH: &str = "4649d1f4889db0378e963bd51f9d787eea98dc42886e66e51973f28e593526b7";
+
+/// Stato interno PCG64 a 128 bit per seed 1042, ottenuto da `Pcg64::new(1042)
+/// .state_decimal()` del crate esistente (formato congelato: decimale, senza
+/// segno, senza zeri in testa).
+const GENESIS_1042_STATE_DEC: &str = "43149974864253806286336044685702662359";
 
 const GENESIS_1042_LINE: &str = concat!(
-    r#"{"seq":0,"tick":0,"type":"STATE","payload":{"prng":"PCG64","seed":1042,"state":1042},"#,
+    r#"{"seq":0,"tick":0,"type":"STATE","payload":{"prng":"PCG64","seed":1042,"state":"43149974864253806286336044685702662359"},"#,
     r#""prev_hash":"0000000000000000000000000000000000000000000000000000000000000000","#,
-    r#""hash":"e73ef6c4d12742137235c98bf4427abc43bc123de12614806929b5e101721e97"}"#,
+    r#""hash":"4649d1f4889db0378e963bd51f9d787eea98dc42886e66e51973f28e593526b7"}"#,
 );
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -80,8 +89,8 @@ fn test_genesis_prev_hash_zeroes_and_shape() {
     assert_eq!(g.r#type.as_str(), "STATE", "la genesi è type STATE");
     assert_eq!(g.prev_hash, ZERO64, "prev_hash della genesi = 64 zeri");
     assert_eq!(g.payload.canonical(),
-        r#"{"prng":"PCG64","seed":1042,"state":1042}"#,
-        "payload genesi: seed, prng PCG64, state esplicito");
+        r#"{"prng":"PCG64","seed":1042,"state":"43149974864253806286336044685702662359"}"#,
+        "payload genesi: seed intero, prng PCG64, state STRINGA decimale");
     assert_eq!(g.hash.len(), 64);
     assert!(g.hash.bytes().all(|b| b.is_ascii_hexdigit() && b == b.to_ascii_lowercase()),
         "hash esadecimale minuscolo");
@@ -91,11 +100,60 @@ fn test_genesis_prev_hash_zeroes_and_shape() {
 #[test]
 fn test_genesis_golden_hash_constant() {
     // Il byte-format del preimage è fissato: l'hash della genesi con seed 1042
-    // deve agganciarsi a questo valore precomputato dall'esterno (Python hashlib).
+    // deve agganciarsi a questo valore precomputato dall'esterno (shasum -a 256
+    // su byte scritti a mano, separatore 0x1F — nessuna funzione del crate).
     let log = Log::genesis(1042);
     assert_eq!(log.events()[0].hash, GENESIS_1042_HASH);
     // e la serializzazione canonica della riga genesi è byte per byte quella attesa
     assert_eq!(log.to_jsonl(), format!("{GENESIS_1042_LINE}\n"));
+}
+
+// ---------------------------------------------------------------------------
+// Formato B2 — `state` stringa decimale, coerenza engine ↔ log
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_genesis_state_is_string_not_integer() {
+    // chiude D1: `state` nel payload canonico è una stringa JSON ("..."),
+    // non un intero; `seed` resta intero.
+    let payload = Log::genesis(1042).events()[0].payload.canonical();
+    assert!(payload.contains(r#""state":"43149974864253806286336044685702662359""#),
+        "state è stringa: {payload}");
+    assert!(payload.contains(r#""seed":1042,"#),
+        "seed resta intero: {payload}");
+    assert!(!payload.contains(r#""state":431499"#),
+        "state NON è più un intero grezzo: {payload}");
+}
+
+#[test]
+fn test_genesis_state_matches_engine_state_decimal() {
+    // coerenza engine ↔ log: lo stato scritto nel payload genesi è ESATTAMENTE
+    // quello che Pcg64::new(seed).state_decimal() rende dall'engine esistente.
+    use ariadne::prng::Pcg64;
+    let atteso = Pcg64::new(1042).state_decimal();
+    assert_eq!(atteso, GENESIS_1042_STATE_DEC, "lo stato d'engine non è cambiato");
+    let log = Log::genesis(1042);
+    let payload = log.events()[0].payload.clone();
+    let state = match payload.get("state") {
+        Some(ariadne::Value::Str(s)) => s.clone(),
+        other => panic!("state del payload genesi non è una stringa: {other:?}"),
+    };
+    assert_eq!(state, atteso);
+}
+
+#[test]
+fn test_genesis_state_string_format() {
+    // formato congelato del campo `state`: solo cifre decimali, nessun segno,
+    // nessuno zero in testa, al più 39 caratteri (128 bit).
+    let state = match Log::genesis(1042).events()[0].payload.get("state") {
+        Some(ariadne::Value::Str(s)) => s.clone(),
+        other => panic!("state non è una stringa: {other:?}"),
+    };
+    assert!(!state.is_empty(), "state non vuoto");
+    assert!(state.bytes().all(|b| b.is_ascii_digit()), "state: solo cifre");
+    assert!(!state.starts_with('+') && !state.starts_with('-'), "state: nessun segno");
+    assert!(!state.starts_with('0'), "state: nessuno zero in testa");
+    assert!(state.len() <= 39, "state oltre 128 bit: {} cifre", state.len());
 }
 
 // ---------------------------------------------------------------------------
