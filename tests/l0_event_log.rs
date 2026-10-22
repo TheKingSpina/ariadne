@@ -12,7 +12,9 @@
 //!   il preimage è privo di ambiguità: un tampering di seq/tick non produce lo stesso hash).
 //! - payload: JSON canonico, chiavi ordinate alfabeticamente, valori solo interi i64 e stringhe;
 //! - genesì: seq 0, STATE, prev_hash = 64 zeri, payload {seed, prng:"PCG64", state};
-//! - log append-only: nessuna mutazione retroattiva; errore → evento compensativo {compensates, reason}.
+//! - log append-only: nessuna mutazione retroattiva; errore → evento compensativo
+//!   {compensates, reason, state} (opzione A del dispatch C1: il compensativo è
+//!   AUTODESCRITTIVO, lo snapshot `state` è copia verbatim dell'ultimo STATE).
 
 use ariadne::{EventType, Log, Payload, Value};
 
@@ -348,23 +350,74 @@ fn test_compensating_event_payload_and_history_intact() {
     let comp = log.compensate(1, "gain errato: il valore era 6", 2).unwrap();
     assert_eq!(comp.seq, 2);
     assert_eq!(comp.r#type.as_str(), "STATE", "l'evento compensativo è STATE");
+    // l'unico STATE precedente è la genesi: il compensativo ne copia lo snapshot
     assert_eq!(
         comp.payload.canonical(),
-        r#"{"compensates":1,"reason":"gain errato: il valore era 6"}"#,
-        "payload compensativo: compensates seq, reason"
+        r#"{"compensates":1,"reason":"gain errato: il valore era 6","state":"43149974864253806286336044685702662359"}"#,
+        "payload compensativo: compensates seq, reason, E lo snapshot dell'ultimo STATE (opzione A)"
     );
     // la storia resta intatta: ogni byte scritto prima del compensativo coincide
     let after = log.to_jsonl();
     let (prefix_before, _) = history_before.split_at(history_before.len() - 1); // meno il \n finale
     assert!(after.starts_with(prefix_before), "nessun byte del passato mutato dal compensativo");
     // e l'evento compensato esiste ancora, identico
-    assert_eq!(comp.payload.canonical(), r#"{"compensates":1,"reason":"gain errato: il valore era 6"}"#);
+    assert_eq!(comp.payload.canonical(), r#"{"compensates":1,"reason":"gain errato: il valore era 6","state":"43149974864253806286336044685702662359"}"#);
     assert_eq!(log.events()[1].payload.canonical(), r#"{"gain":5}"#, "l'evento errato rimane nel log");
     // catena intera valida
     log.verify().expect("log con correzione verificabile end-to-end");
 
     // compensazione verso un seq inesistente: vietata
     assert!(log.compensate(999, "fuori dal log", 3).is_err());
+}
+
+/// Payload compensativo ESATTO in tre chiavi (opzione A, C1): `{compensates,
+/// reason, state}` con `state` = snapshot dell'ultimo STATE PRECEDENTE, non
+/// della genesi se in mezzo ce n'è un altro.
+#[test]
+fn test_compensating_payload_carries_most_recent_state_snapshot_exact() {
+    const SNAP_SECOND: &str = "918273645040506070809101112131415161718";
+    let mut log = Log::genesis(1042);
+    log.append(1, EventType::Sense, Payload::empty()).unwrap();
+    log.append(1, EventType::State, Payload::from_pairs(vec![
+        ("state", Value::Str(SNAP_SECOND.to_string()))
+    ])).unwrap();
+    let history_before = log.to_jsonl();
+
+    let comp = log.compensate(1, "stimolo errato: era 42", 2).unwrap();
+    assert_eq!(comp.seq, 2);
+    assert_eq!(comp.r#type.as_str(), "STATE", "l'evento compensativo è STATE");
+    assert_eq!(
+        comp.payload.canonical(),
+        r#"{"compensates":1,"reason":"stimolo errato: era 42","state":"918273645040506070809101112131415161718"}"#,
+        "payload compensativo in tre chiavi: STATE più RECENTE, non genesi"
+    );
+    assert_ne!(SNAP_SECOND, GENESIS_1042_STATE_DEC,
+        "controllo servente: l'ultimo snapshot e quello di genesi sono distinguibili");
+    // la storia resta intatta (invariante §3 non allentata dal nuovo payload)
+    let after = log.to_jsonl();
+    let (prefix_before, _) = history_before.split_at(history_before.len() - 1);
+    assert!(after.starts_with(prefix_before), "nessun byte del passato mutato dal compensativo");
+    assert_eq!(log.events()[2].payload.canonical(), r#"{"state":"918273645040506070809101112131415161718"}"#,
+        "l'evento compensato resta nel log, intatto");
+    log.verify().expect("log con correzione compensativa verificabile end-to-end");
+}
+
+/// Su un log di sola genesi: il compensativo copia lo snapshot di GENESI.
+#[test]
+fn test_compensating_state_on_genesis_only_log_copies_genesis_snapshot() {
+    let mut log = Log::genesis(1042);
+    let history_before = log.to_jsonl();
+    let comp = log.compensate(0, "genesi corretta senza riscritture", 0).unwrap();
+    assert_eq!(comp.seq, 1, "il compensativo è il secondo evento");
+    assert_eq!(
+        comp.payload.get("state"),
+        Some(&Value::Str(GENESIS_1042_STATE_DEC.to_string())),
+        "l'ultimo STATE è la genesi: lo snapshot copiato è il suo"
+    );
+    let after = log.to_jsonl();
+    let (prefix_before, _) = history_before.split_at(history_before.len() - 1);
+    assert!(after.starts_with(prefix_before), "nessun byte del passato mutato dal compensativo");
+    log.verify().expect("genesi + compensativo è verificabile");
 }
 
 #[test]
@@ -378,5 +431,9 @@ fn test_immutable_events_slice_borrows() {
     let after = log.to_jsonl();
     assert!(after.starts_with(&prefix[..prefix.len() - 1]), "prefisso intatto");
     assert_eq!(log.events().len(), len + 1);
-    assert_eq!(log.events()[len].payload.canonical(), r#"{"compensates":1,"reason":"segno"}"#);
+    assert_eq!(
+        log.events()[len].payload.canonical(),
+        r#"{"compensates":1,"reason":"segno","state":"43149974864253806286336044685702662359"}"#,
+        "payload compensativo in tre chiavi: compensates, reason, state (opzione A)"
+    );
 }

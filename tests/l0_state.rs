@@ -176,22 +176,58 @@ fn test_head_is_hash_of_last_event_not_genesis() {
 }
 
 // ---------------------------------------------------------------------------
-// Evento compensativo (§3): è un STATE senza snapshot di prng
+// Evento compensativo (§3, opzione A del dispatch C1): è un STATE
+// AUTODESCRITTIVO — porta lo snapshot dell'ultimo STATE precedente
 // ---------------------------------------------------------------------------
 
+/// Il compensativo porta lo STESSO snapshot dell'ultimo STATE precedente e la
+/// fold lo legge da LÌ (opzione A): nessuno STATE non-autodescrittivo, la
+/// fold non ha più bisogno di ricordarsi l'«ultimo visto».
 #[test]
-fn test_compensating_state_has_no_snapshot_and_keeps_last_prng() {
+fn test_compensating_state_carries_last_snapshot_and_fold_reads_it() {
     let mut log = Log::genesis(1042);
     log.append(1, EventType::Sense, Payload::from_pairs(vec![("stimolo", Value::Int(3))])).unwrap();
     let comp = log.compensate(1, "stimolo errato", 1).unwrap();
     log.verify().expect("log con correzione compensativa è verificato");
-    assert_eq!(comp.payload.get("state"), None, "il compensativo non porta snapshot di prng");
+    // l'unico STATE precedente è la genesi: il compensativo ne copia lo snapshot
+    assert_eq!(
+        comp.payload.get("state"),
+        Some(&Value::Str(GENESIS_1042_STATE_DEC.to_string())),
+        "il compensativo porta lo snapshot dell'ultimo STATE precedente (qui la genesi)"
+    );
     let s = State::fold(&log).unwrap();
-    assert_eq!(s.prng, GENESIS_1042_STATE_DEC, "prng resta l'ultimo snapshot VISTO (la genesi)");
+    assert_eq!(s.prng, GENESIS_1042_STATE_DEC, "fold: prng è ciò che il compensativo PORTE");
     assert_eq!(s.sense, 1, "gli eventi applicati contano ancora");
     assert_eq!(s.action, 0);
     assert_eq!(s.head, comp.hash, "head = ultimo evento, che è il compensativo");
     assert_eq!(s.tick, 1);
+}
+
+/// Il compensativo NON avanza il PRNG: lo snapshot dopo la compensazione è
+/// identico a prima (opzione A: lo snapshot del compensativo è COPIATO —
+/// nessun draw, nessun ricalcolo in correzione).
+#[test]
+fn test_compensation_does_not_advance_prng() {
+    let mut log = Log::genesis(1042);
+    log.append(1, EventType::Sense, Payload::from_pairs(vec![("stimolo", Value::Int(3))])).unwrap();
+    log.append(1, EventType::State, Payload::from_pairs(vec![("state", Value::Str(SNAP.to_string()))])).unwrap();
+    log.verify().expect("log verificato");
+    let before = State::fold(&log).unwrap();
+
+    let comp = log.compensate(1, "stimolo errato", 1).unwrap();
+    assert_eq!(
+        comp.payload.get("state"),
+        Some(&Value::Str(SNAP.to_string())),
+        "lo snapshot del compensativo è copia dell'ultimo STATE, NON un nuovo draw"
+    );
+    assert_ne!(SNAP, GENESIS_1042_STATE_DEC, "controllo servente: i due snapshot distinguono");
+
+    let after = State::fold(&log).unwrap();
+    assert_eq!(after.prng, before.prng, "il PRNG NON avanza: correzione senza draw");
+    assert_eq!(after.sense, before.sense);
+    assert_eq!(after.action, before.action);
+    assert_eq!(after.tick, before.tick);
+    assert_eq!(after.head, comp.hash, "solo head avanza: c'è un nuovo evento in coda");
 }
 
 // ---------------------------------------------------------------------------
@@ -238,4 +274,52 @@ fn test_fold_fails_on_broken_chain_before_any_verify() {
     let good = Log::from_jsonl(&jsonl).unwrap();
     good.verify().expect("la genesi + append puliti formano una catena valida");
     assert!(State::fold(&good).is_ok(), "fold del log non corrotto a verde");
+}
+
+// ---------------------------------------------------------------------------
+// Invariante su LOG REALE (genesi + N cicli + compensazione): ogni evento
+// STATE porta `state`, e la fold concorda con l'ultimo
+// ---------------------------------------------------------------------------
+
+#[test]
+fn test_real_log_every_state_carries_snapshot_and_fold_agrees() {
+    use ariadne::cycle;
+    let seed = 1042u64;
+    let mut log = Log::genesis(seed);
+    let mut rng = Pcg64::new(seed);
+    cycle::run_cycles(&mut log, &mut rng, 3).expect("3 cicli legali");
+
+    // l'ultimo evento è uno STATE col suo snapshot, e l'engine concorda
+    let ultimo = log.events().last().unwrap();
+    let ultimo_snapshot = match ultimo.payload.get("state") {
+        Some(Value::Str(s)) => s.clone(),
+        other => panic!("ultimo STATE senza snapshot: {other:?}"),
+    };
+    assert_eq!(rng.state_decimal(), ultimo_snapshot, "snapshot in log ≠ snapshot d'engine: il log reale non è sincrono");
+
+    // compensazione dell'ultimo STATE (opzione A: riparte con lo stesso snapshot)
+    let comp = log.compensate(ultimo.seq, "correzione provata su log reale", ultimo.tick)
+        .expect("compensazione legale dell'ultimo STATE");
+    log.verify().expect("log reale con compensazione è verificabile end-to-end");
+    assert_eq!(
+        comp.payload.get("state"),
+        Some(&Value::Str(ultimo_snapshot.clone())),
+        "il compensativo porta lo snapshot dell'ultimo STATE precedente"
+    );
+
+    // INVARIANTE: nel log reale OGNI evento STATE (genesi, STATE di ciclo e
+    // compensativo) porta `state`
+    for e in log.events() {
+        if e.r#type == EventType::State {
+            assert!(
+                matches!(e.payload.get("state"), Some(Value::Str(_))),
+                "EVENTO STATE non autodescrittivo alla seq {}: {}", e.seq, e.payload.canonical()
+            );
+        }
+    }
+
+    // e la fold concorda con l'ultimo snapshot portato
+    let s = State::fold(&log).unwrap();
+    assert_eq!(s.prng, ultimo_snapshot, "fold: prng = snapshot dell'ultimo STATE");
+    assert_eq!(s.head, comp.hash, "head = compensativo");
 }
