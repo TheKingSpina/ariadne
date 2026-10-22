@@ -98,7 +98,10 @@ L'approvazione umana è l'unico passaggio che le rende esercitabili.
   credere a ciò che gli agenti dichiarano. Proposta: whitelist read-only.
 - **Mnemosyne non esercitato**: zero `memory_recall` in tutto il run.
 - **Un modello è sparito a metà run** (minimax-m3.1): i modelli come stringa nel
-  frontmatter sono un punto di rottura.
+  frontmatter sono un punto di rottura. Verificato il 22 ottobre con `all: true`:
+  `minimax-m3.1-flash-free` **non è più nel provider**, quindi la sostituzione con
+  `deepseek-v4.1-flash-free` non è provvisoria e non esiste un ritorno. I quattro pin
+  attuali risultano tutti `active`; l'unica citazione di minimax è questa nota storica.
 - **Comandi composti e permessi** (`22 ottobre`): `cargo *` era in whitelist, ma il
   tester ha scritto `cd … && cargo test`. Il permesso è sul comando intero, quindi è
   stato negato due volte e il gate è chiuso senza esecuzione. Regola aggiunta: mai
@@ -143,9 +146,50 @@ L'approvazione umana è l'unico passaggio che le rende esercitabili.
 - **Storia del repository**: tre commit separati dal codice — legge (`a314d54`),
   infrastruttura agenti (`4469f0f`), documentazione (`886ba57`), più questo di chiusura.
   Il codice resta ai commit degli agenti; l'indice è pulito.
-- **Deroga dichiarata**: l'orchestratore ha eseguito i commit fuori dalla propria
-  whitelist git read-only, su istruzione esplicita dell'umano. La whitelist e la realtà
-  divergono: o si estende al commit, o il commit resta un gesto umano. Da decidere.
-- **Tre proposte nuove in attesa** (`mem_b86cc195` la v0.3 è legge, `mem_1202a4da` il
-  protocollo di revisione, `mem_a29472ba` la convenzione git). Non le ho approvate:
-  l'approvazione è dell'umano, e sono nuove. Saranno il primo oggetto del prossimo run.
+- **Deroga dichiarata e registrata — decisione dell'umano**: l'orchestratore ha eseguito
+  i commit fuori dalla propria whitelist git read-only, su istruzione esplicita, in due
+  occasioni il 22 ottobre (i quattro commit di legge/infrastruttura/documentazione, poi
+  l'accettazione). **La regola resta**: chi orchestra non scrive nella storia; prepara
+  l'indice e il commit è un gesto umano, salvo istruzione diretta — e ogni deroga va
+  registrata nel messaggio di commit, così il registro non mente su chi ha premuto.
+  La whitelist resta read-only: la divergenza fra configurazione e realtà è dichiarata,
+  non eliminata.
+- **Ratifiche dell'umano**: il rimando in `spec/L0_SPEC_v0.2.md` resta (protegge i
+  futuri auditor; il byte-perfetto lo garantisce il replay dei commit, e la v0.2 intatta
+  si recupera da git); `mem_8cd8db39` riscritta e approvata (il principio sotto è vivo,
+  respingerla avrebbe sepolto una verità con un bug morto); i tre commit separati valgono
+  il rebase risparmiato (la legge leggibile da sola nel replay).
+- **Le tre proposte approvate** (in sequenza, una alla volta, come le altre): `mem_b86cc195`
+  (la v0.3 è legge), `mem_1202a4da` (protocollo di revisione delle pending), `mem_a29472ba`
+  (convenzione git). Zero pending residue al momento dell'approvazione.
+- **Un errore mio, corretto: la diagnosi sul richiamo era falsa.** Avevo concluso che
+  `memory_context` servisse solo le memorie `activation = "always"`, basandomi su «zero
+  risultati» letti dalla risposta. Lo zero era mio: la risposta ha il campo **`context`**,
+  e io cercavo `memories`/`items`/`results`. Rimisurato: `memory_context` restituisce un
+  contesto **classificato per rilevanza e tagliato a un budget di ~1200 token**
+  (`tokensEstimated` ~1100, `excludedResults` conta le scartate, `requiredContextComplete`
+  sempre true), mescolando `always` e `on_demand`. Resta vero che `activation` si sceglie
+  **solo** alla proposta: `memory_correct` tocca il contenuto, non l'attivazione.
+- **L'ancora conteneva quella diagnosi falsa ed era `always`**: una memoria sbagliata con
+  la massima propagazione, iniettata in ogni sessione futura. Approvata dall'umano e poi
+  **corretta a v3** (`mem_d5d97885`) con la meccanica misurata e l'avvertenza sul campo
+  `context`. La correzione è il primo caso d'uso vero di `memory_correct`.
+- **Lezione, seconda della stessa classe**: un campo letto male non è un dato. Prima il
+  modello «sparito» perché assente dalla lista dei più recenti, poi il contesto «vuoto»
+  perché leggevo il campo sbagliato. In entrambi i casi la conclusione era pronta e la
+  misura no — e in entrambi i casi stavo per scriverla in una memoria permanente.
+- **Ancora di richiamo** (`mem_d5d97885`, `always`, approvata dall'umano e corretta due
+  volte — v3 per la meccanica falsa, v4 per l'unicità): legge vigente, meccanica del
+  richiamo misurata, protocollo di revisione, regole processuali (MCP in sequenza;
+  l'orchestratore non committa).
+- **I tre buchi di memoria colmati** (approvati dall'umano): l'accettazione di L0
+  (`mem_f0326f10`, `always` — «STATO DEL PROGETTO — L0 ACCETTATO», con l'avvertenza di non
+  riaprire il livello), i debiti noti e accettati (`mem_16fe6e19`: B4, parser senza
+  clienti, CRLF, seed), il metodo della misura (`mem_ac4002f6`: `all: true` prima di
+  dichiarare sparito un modello, la forma della risposta prima di dichiarare vuoto un
+  contesto). Restano fuori dalla memoria, per scelta: i report dei gate (output di test,
+  vivono in `reports/`), il testo della SPEC e il codice (stanno in git), la cronologia.
+- **Prova finale del richiamo**: con l'accettazione in memoria, `memory_context` al
+  risveglio restituisce **entrambe** le `always`, con «STATO DEL PROGETTO — L0 ACCETTATO»
+  in testa. L'ancora è corretta a v4 (non più «unica per progetto»). Il ciclo
+  proposta → approvazione → richiamo è chiuso e misurato, non dichiarato.
