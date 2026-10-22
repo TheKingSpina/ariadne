@@ -5,11 +5,11 @@
 //!   `from_jsonl`, `events`.
 //! - Ogni errore si corregge con evento compensativo: payload {compensates, reason};
 //!   la storia resta intatta.
-//! - Genesi (§4): seq 0, tick 0, type STATE, prev_hash = 64 zeri, payload
-//!   {seed, prng: "PCG64", state: iniziale esplicito} con state = seed (decisione
-//!   registrata in governance `opencode:Ariadne`: finché l'engine PCG64 non è in
-//!   scope, lo stato iniziale esplicito coincide col seed; nessun calcolo PRNG in
-//!   L0 §2-§3).
+//! - Genesi (§4 + Schema PRNG, dispatch B2): seq 0, tick 0, type STATE, prev_hash
+//!   = 64 zeri, payload {seed, prng: "PCG64", state: stringa decimale dello stato
+//!   interno PCG64 a 128 bit}. `state` = `Pcg64::new(seed).state_decimal()`
+//!   (formato congelato: decimale, senza segno, senza zeri in testa; round-
+//!   trippabile su u128) — chiude la discrepanza D1 `state = seed`.
 //! - Formato log: JSONL, un evento per riga, membri top-level nell'ordine della
 //!   SPEC §2 {seq, tick, type, payload, prev_hash, hash}, newline finale '\n'.
 //!
@@ -21,6 +21,7 @@ use std::fmt;
 
 use crate::event::{compute_hash, Event, EventType, GENESIS_PREV_HASH};
 use crate::payload::{Payload, Value};
+use crate::prng::Pcg64;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum Error {
@@ -51,13 +52,16 @@ pub struct Log {
 }
 
 impl Log {
-    /// Evento genesi (§4): seq 0, tick 0, STATE, prev_hash 64 zeri,
-    /// payload {seed, prng: "PCG64", state esplicito}.
+    /// Evento genesi (§4 + Schema PRNG): seq 0, tick 0, STATE, prev_hash 64 zeri,
+    /// payload {seed, prng: "PCG64", state}. Lo stato PCG64 reale a 128 bit è
+    /// serializzato come stringa decimale da `Pcg64::new(seed).state_decimal()`;
+    /// `seed` resta intero (formato congelato, dispatch B2).
     pub fn genesis(seed: u64) -> Log {
+        let state = Pcg64::new(seed).state_decimal();
         let payload = Payload::from_pairs(vec![
             ("prng", Value::Str("PCG64".to_string())),
             ("seed", Value::Int(seed as i64)),
-            ("state", Value::Int(seed as i64)),
+            ("state", Value::Str(state)),
         ]);
         let genesis = Event::seal(0, 0, EventType::State, payload, GENESIS_PREV_HASH);
         Log { events: vec![genesis] }
