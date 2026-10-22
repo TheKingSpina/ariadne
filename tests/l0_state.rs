@@ -41,7 +41,7 @@ const SNAP: &str = "123456789012345678901234567890123456789";
 
 #[test]
 fn test_fold_genesis_initial_state() {
-    let log = Log::genesis(1042);
+    let log = Log::genesis(1042).expect("seed in range: adattamento meccanico autorizzato (C2)");
     log.verify().expect("la genesi da sola è un log verificato");
     let s = State::fold(&log).expect("la fold di un log verificato non fallisce");
     assert_eq!(s.tick, 0, "tick 0 alla genesi");
@@ -51,7 +51,7 @@ fn test_fold_genesis_initial_state() {
     assert_eq!(s.head, GENESIS_1042_HASH, "head = hash della genesi");
     // stesso contratto su un secondo, generico assieme di seed: coerenza campo a campo col log
     for seed in [1u64, 7777, 1099] {
-        let log = Log::genesis(seed);
+        let log = Log::genesis(seed).expect("seed in range: adattamento meccanico autorizzato (C2)");
         let g = &log.events()[0];
         let expected_prng = match g.payload.get("state") {
             Some(Value::Str(v)) => v.clone(),
@@ -71,7 +71,7 @@ fn test_fold_genesis_initial_state() {
 #[test]
 fn test_fold_is_pure_byte_identical() {
     let build = || {
-        let mut log = Log::genesis(1000);
+        let mut log = Log::genesis(1000).expect("seed in range: adattamento meccanico autorizzato (C2)");
         log.append(1, EventType::Sense, Payload::from_pairs(vec![("stimolo", Value::Int(42))]))
             .unwrap();
         log.append(1, EventType::Action, Payload::from_pairs(vec![("mossa", Value::Str("V".to_string()))]))
@@ -91,7 +91,7 @@ fn test_fold_is_pure_byte_identical() {
 
     // forma canonica della genesi: chiavi esatte e in quest'ordine esatto,
     // stessa stringa a ogni run (ordine alfabetico: action, head, prng, sense, tick)
-    let genesis = State::fold(&Log::genesis(1042)).unwrap();
+    let genesis = State::fold(&Log::genesis(1042).expect("seed in range: adattamento meccanico autorizzato (C2)")).unwrap();
     assert_eq!(
         genesis.canonical(),
         concat!(
@@ -107,7 +107,7 @@ fn test_fold_is_pure_byte_identical() {
 
 #[test]
 fn test_counters_count_hand_built_sequence() {
-    let mut log = Log::genesis(7);
+    let mut log = Log::genesis(7).expect("seed in range: adattamento meccanico autorizzato (C2)");
     log.append(1, EventType::Sense, Payload::from_pairs(vec![("stimolo", Value::Int(1))])).unwrap();
     log.append(1, EventType::Action, Payload::from_pairs(vec![("mossa", Value::Str("a".to_string()))])).unwrap();
     log.append(1, EventType::State, Payload::from_pairs(vec![("state", Value::Str(SNAP.to_string()))])).unwrap();
@@ -145,7 +145,7 @@ fn test_prng_read_from_last_state_snapshot_not_recomputed() {
     assert_ne!(snapshot, recompute_one_draw, "controllo: il ricalcolo darebbe un valore diverso");
     assert_ne!(snapshot, Pcg64::new(seed).state_decimal(), "e diverso anche dalla genesi");
 
-    let mut log = Log::genesis(seed);
+    let mut log = Log::genesis(seed).expect("seed in range: adattamento meccanico autorizzato (C2)");
     log.append(1, EventType::Sense, Payload::from_pairs(vec![("draw", Value::Int(draw as i64))]))
         .unwrap();
     log.append(1, EventType::State, Payload::from_pairs(vec![("state", Value::Str(snapshot.clone()))]))
@@ -163,7 +163,7 @@ fn test_prng_read_from_last_state_snapshot_not_recomputed() {
 
 #[test]
 fn test_head_is_hash_of_last_event_not_genesis() {
-    let mut log = Log::genesis(9);
+    let mut log = Log::genesis(9).expect("seed in range: adattamento meccanico autorizzato (C2)");
     log.append(1, EventType::Sense, Payload::from_pairs(vec![("stimolo", Value::Int(5))])).unwrap();
     log.append(1, EventType::Action, Payload::from_pairs(vec![("mossa", Value::Str("x".to_string()))])).unwrap();
     log.verify().expect("log verificato");
@@ -185,7 +185,7 @@ fn test_head_is_hash_of_last_event_not_genesis() {
 /// fold non ha più bisogno di ricordarsi l'«ultimo visto».
 #[test]
 fn test_compensating_state_carries_last_snapshot_and_fold_reads_it() {
-    let mut log = Log::genesis(1042);
+    let mut log = Log::genesis(1042).expect("seed in range: adattamento meccanico autorizzato (C2)");
     log.append(1, EventType::Sense, Payload::from_pairs(vec![("stimolo", Value::Int(3))])).unwrap();
     let comp = log.compensate(1, "stimolo errato", 1).unwrap();
     log.verify().expect("log con correzione compensativa è verificato");
@@ -208,7 +208,7 @@ fn test_compensating_state_carries_last_snapshot_and_fold_reads_it() {
 /// nessun draw, nessun ricalcolo in correzione).
 #[test]
 fn test_compensation_does_not_advance_prng() {
-    let mut log = Log::genesis(1042);
+    let mut log = Log::genesis(1042).expect("seed in range: adattamento meccanico autorizzato (C2)");
     log.append(1, EventType::Sense, Payload::from_pairs(vec![("stimolo", Value::Int(3))])).unwrap();
     log.append(1, EventType::State, Payload::from_pairs(vec![("state", Value::Str(SNAP.to_string()))])).unwrap();
     log.verify().expect("log verificato");
@@ -237,7 +237,7 @@ fn test_compensation_does_not_advance_prng() {
 #[test]
 fn test_fold_fails_on_broken_chain_before_any_verify() {
     // log valido di partenza, poi le due rotture della catena
-    let mut log = Log::genesis(1001);
+    let mut log = Log::genesis(1001).expect("seed in range: adattamento meccanico autorizzato (C2)");
     log.append(1, EventType::Sense, Payload::from_pairs(vec![("stimolo", Value::Int(1))])).unwrap();
     log.append(1, EventType::Action, Payload::from_pairs(vec![("mossa", Value::Str("a".to_string()))])).unwrap();
     let jsonl = log.to_jsonl();
@@ -285,7 +285,7 @@ fn test_fold_fails_on_broken_chain_before_any_verify() {
 fn test_real_log_every_state_carries_snapshot_and_fold_agrees() {
     use ariadne::cycle;
     let seed = 1042u64;
-    let mut log = Log::genesis(seed);
+    let mut log = Log::genesis(seed).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let mut rng = Pcg64::new(seed);
     cycle::run_cycles(&mut log, &mut rng, 3).expect("3 cicli legali");
 

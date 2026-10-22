@@ -23,11 +23,13 @@
 //!   strutturalmente: seq non da 0 senza gap (posizione = seq) o `prev_hash`
 //!   memorizzato diverso dall'hash memorizzato dell'evento precedente, con
 //!   [`StateError::Chain`].
-//! - Evento compensativo (§3): è un STATE con payload {compensates, reason},
-//!   cioè SENZA snapshot `state`; non porta un nuovo stato del PRNG, quindi
-//!   lascia `prng` all'ultimo snapshot visto. Uno STATE che porta `state`
-//!   aggiorna `prng` leggendolo verbatim: la fold non valida né reinterpretà
-//!   la stringa dello snapshot.
+//! - Evento compensativo (§3 + opzione A, dispatch C1): è un STATE come gli
+//!   altri — AUTODESCRITTIVO, porta lo snapshot `state` dell'ultimo STATE
+//!   precedente (copia verbatim) e NON avanza il PRNG. Ogni STATE del log
+//!   porta `state`: la fold non ricorda più un «ultimo visto», lo snapshot è
+//!   aggiornato da ciò che l'evento PORTE — un STATE senza `state` stringa è
+//!   un errore rumoroso ([`StateError::Snapshot`]); nessuna conciliazione
+//!   silenziosa.
 //! - La fold è PURA: nessuna mutazione del log, nessun I/O, nessun
 //!   wall-clock; stesso log → stesso stato, byte per byte.
 //!
@@ -58,6 +60,12 @@ pub enum StateError {
     /// iniziale del PRNG è leggibile (la SPEC §4 fissa lo snapshot nello
     /// payload della genesi).
     Genesis(String),
+    /// Evento STATE (non genesi, o comunque in coda dopo la genesi) senza
+    /// `state` stringa nel payload: viola l'invariante «ogni STATE è
+    /// autodescrittivo» (opzione A, dispatch C1). Errore rumoroso, nessuna
+    /// conciliazione con un «ultimo visto»: niente stato è derivabile da uno
+    /// snapshot assente.
+    Snapshot(String),
     /// Contatore fuori dalla scala `i64` della forma canonica: cast esplicito
     /// rifiutato, mai un `as` silenzioso. Irrealistico (contatori tratti da un
     /// `Vec` in memoria), tuttavia non fiducioso.
@@ -69,6 +77,7 @@ impl fmt::Display for StateError {
         match self {
             StateError::Chain(m) => write!(f, "fold: catena non agganciata: {m}"),
             StateError::Genesis(m) => write!(f, "fold: genesi senza snapshot: {m}"),
+            StateError::Snapshot(m) => write!(f, "fold: STATE senza snapshot: {m}"),
             StateError::Overflow(m) => write!(f, "fold: contatore oltre i64: {m}"),
         }
     }
@@ -151,12 +160,21 @@ impl State {
                         .ok_or_else(|| StateError::Overflow("action oltre u64".to_string()))?;
                 }
                 EventType::State => {
-                    // Solo uno STATE che PORTE uno snapshot aggiorna `prng`;
-                    // un compensativo {compensates, reason} non ne porta uno e
-                    // lascia vivo l'ultimo snapshot visto (vedi mod-doc).
-                    if let Some(Value::Str(s)) = e.payload.get("state") {
-                        prng = s.clone();
-                    }
+                    // Ogni STATE è autodescrittivo (opzione A, dispatch C1):
+                    // PORTE lo snapshot e da esso `prng` si aggiorna — VERBATIM
+                    // (la fold non valida né reinterpretà la stringa). Niente
+                    // «ultimo visto»: uno STATE senza `state` stringa è un
+                    // errore rumoroso, non un silenzio da colmare col ricordo.
+                    prng = match e.payload.get("state") {
+                        Some(Value::Str(s)) => s.clone(),
+                        _ => {
+                            return Err(StateError::Snapshot(format!(
+                                "evento STATE a seq {} senza `state` stringa nel payload: {}",
+                                e.seq,
+                                e.payload.canonical()
+                            )))
+                        }
+                    };
                 }
             }
             head = e.hash.clone();

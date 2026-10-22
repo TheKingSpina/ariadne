@@ -44,7 +44,12 @@ use ariadne::{cycle, Log};
 fn main() -> ExitCode {
     match run() {
         Ok((seed, ticks)) => {
-            let mut log = Log::genesis(seed);
+            // genesis è fallibile dal dispatch C1: rifiuta seed > i64::MAX con
+            // Error::Seed. Il parse CLI ammette qualunque u64, quindi l'expect
+            // può scattare per seed ≥ 2^63: panic con stdout vuoto (genesis
+            // precede ogni stampa del log).
+            let mut log = Log::genesis(seed)
+                .expect("seed oltre i64::MAX: rifiutato da Log::genesis, nessun wrap silenzioso");
             let mut rng = Pcg64::new(seed);
             match cycle::run_cycles(&mut log, &mut rng, ticks) {
                 Ok(()) => {

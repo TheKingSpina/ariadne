@@ -3,13 +3,18 @@
 //! - append-only: nessuna mutazione, cancellazione, riscrittura o riordino;
 //!   l'API espone solo `genesis`, `append`, `compensate`, `verify`, `to_jsonl`,
 //!   `from_jsonl`, `events`.
-//! - Ogni errore si corregge con evento compensativo: payload {compensates, reason};
-//!   la storia resta intatta.
-//! - Genesi (§4 + Schema PRNG, dispatch B2): seq 0, tick 0, type STATE, prev_hash
-//!   = 64 zeri, payload {seed, prng: "PCG64", state: stringa decimale dello stato
-//!   interno PCG64 a 128 bit}. `state` = `Pcg64::new(seed).state_decimal()`
-//!   (formato congelato: decimale, senza segno, senza zeri in testa; round-
-//!   trippabile su u128) — chiude la discrepanza D1 `state = seed`.
+//! - Ogni errore si corregge con evento compensativo: payload
+//!   {compensates, reason, state} (opzione A, dispatch C1: il compensativo è
+//!   AUTODESCRITTIVO — porta lo snapshot `state` dell'ultimo STATE precedente,
+//!   verbatim, e NON avanza il PRNG); la storia resta intatta.
+//! - Genesi (§4 + Schema PRNG, dispatch B2; fallibile dal dispatch C1): seq 0,
+//!   tick 0, type STATE, prev_hash = 64 zeri, payload {seed, prng: "PCG64",
+//!   state: stringa decimale dello stato interno PCG64 a 128 bit}. `state` =
+//!   `Pcg64::new(seed).state_decimal()` (formato congelato: decimale, senza
+//!   segno, senza zeri in testa; round-trippabile su u128) — chiude la
+//!   discrepanza D1 `state = seed`. `seed` resta intero `i64` nel payload
+//!   (contatore, non entropia): seed > `i64::MAX` è RIFIUTATO con errore
+//!   esplicito — mai un cast `as` che mutorosamente lo renda negativo.
 //! - Formato log: JSONL, un evento per riga, membri top-level nell'ordine della
 //!   SPEC §2 {seq, tick, type, payload, prev_hash, hash}, newline finale '\n'.
 //!
@@ -32,6 +37,9 @@ pub enum Error {
     /// Catena non verificabile: seq con gap o non da 0, prev_hash disallineato,
     /// hash registrato diverso dal ricalcolo, compensazione verso seq inesistente.
     Chain(String),
+    /// Seed fuori dalla scala `i64` del payload canonico: un cast `as`
+    /// silenzioso lo renderebbe negativo (wrap vietato). Nessun evento creato.
+    Seed(String),
 }
 
 impl fmt::Display for Error {
@@ -39,6 +47,7 @@ impl fmt::Display for Error {
         match self {
             Error::Schema(m) => write!(f, "schema: {m}"),
             Error::Chain(m) => write!(f, "chain: {m}"),
+            Error::Seed(m) => write!(f, "seed: {m}"),
         }
     }
 }
@@ -55,16 +64,25 @@ impl Log {
     /// Evento genesi (§4 + Schema PRNG): seq 0, tick 0, STATE, prev_hash 64 zeri,
     /// payload {seed, prng: "PCG64", state}. Lo stato PCG64 reale a 128 bit è
     /// serializzato come stringa decimale da `Pcg64::new(seed).state_decimal()`;
-    /// `seed` resta intero (formato congelato, dispatch B2).
-    pub fn genesis(seed: u64) -> Log {
+    /// `seed` resta intero (formato congelato, dispatch B2). FALLIBILE dal
+    /// dispatch C1: seed > `i64::MAX` (2^63-1) è rifiutato con [`Error::Seed`],
+    /// prima un cast `as` lo mutava in negativo — nessun evento creato nel
+    /// percorso `Err`.
+    pub fn genesis(seed: u64) -> Result<Log, Error> {
+        let seed_int = i64::try_from(seed).map_err(|_| {
+            Error::Seed(format!(
+                "seed {seed} oltre i64::MAX: nel payload canonico il seed resta intero i64 \
+                 (contatore, non entropia), nessun cast silenzioso"
+            ))
+        })?;
         let state = Pcg64::new(seed).state_decimal();
         let payload = Payload::from_pairs(vec![
             ("prng", Value::Str("PCG64".to_string())),
-            ("seed", Value::Int(seed as i64)),
+            ("seed", Value::Int(seed_int)),
             ("state", Value::Str(state)),
         ]);
         let genesis = Event::seal(0, 0, EventType::State, payload, GENESIS_PREV_HASH);
-        Log { events: vec![genesis] }
+        Ok(Log { events: vec![genesis] })
     }
 
     /// Apre un evento in coda: seq = ultimo + 1, prev_hash = hash di testa.
@@ -80,10 +98,14 @@ impl Log {
         Ok(self.events.last().expect("appena inserito"))
     }
 
-    /// Correzione compensativa (§3): evento STATE in coda con payload
-    /// {compensates: seq, reason}. L'evento compensato resta nel log, intatto.
-    /// Ritorna una copia posseduta: la logica append-only non presta
-    /// riferimenti mutabili oltre la chiusura dell'append.
+    /// Correzione compensativa (§3 + opzione A, dispatch C1): evento STATE in
+    /// coda con payload {compensates: seq, reason, state}. `state` è lo
+    /// SNAPSHOT più recente nel log, copiato verbatim (scansione all'indietro
+    /// della coda; la genesi ne ha sempre uno): per l'invariante «ogni STATE
+    /// è autodescrittivo» coincide con l'ultimo STATE. Il compensativo è
+    /// autodescrittivo e NON avanza il PRNG. L'evento compensato resta nel
+    /// log, intatto. Ritorna una copia posseduta: la logica append-only non
+    /// presta riferimenti mutabili oltre la chiusura dell'append.
     pub fn compensate(&mut self, compensates: u64, reason: &str, tick: u64) -> Result<Event, Error> {
         if compensates as usize >= self.events.len() {
             return Err(Error::Chain(format!(
@@ -94,9 +116,32 @@ impl Log {
         let comp_int = i64::try_from(compensates).map_err(|_| {
             Error::Chain("compensates oltre i64: fuori dalla scala ammessa nel payload".to_string())
         })?;
+        // Snapshot da portare: lo SNAPSHOT più recente nel log, scansionando
+        // all'indietro la coda — SPEC §3 + opzione A: l'oggetto della ricerca
+        // è lo snapshot, non l'ultimo STATE; per l'invariante «ogni STATE è
+        // autodescrittivo» coincide sempre con l'ultimo STATE (la genesi ne
+        // ha sempre uno), quindi uno STATE senz'istantanea non prolunga mai
+        // la correzione con una conciliazione implicita.
+        let ultimo_snapshot = self
+            .events
+            .iter()
+            .rev()
+            .find(|e| e.r#type == EventType::State && e.payload.get("state").is_some());
+        let snapshot = match ultimo_snapshot {
+            Some(e) => match e.payload.get("state") {
+                Some(Value::Str(s)) => s.clone(),
+                _ => unreachable!("selezionato solo per STATE con `state`"),
+            },
+            None => {
+                return Err(Error::Chain(
+                    "log senza alcuno snapshot `state`: nessuno snapshot da copiare".to_string(),
+                ))
+            }
+        };
         let payload = Payload::from_pairs(vec![
             ("compensates", Value::Int(comp_int)),
             ("reason", Value::Str(reason.to_string())),
+            ("state", Value::Str(snapshot)),
         ]);
         self.append(tick, EventType::State, payload).cloned()
     }
@@ -487,7 +532,7 @@ mod tests {
     #[test]
     fn gap_is_chain_error_not_schema_error() {
         // costruzione interna (crate): catena con un buco seq 0,1 riftata a 0,1,3
-        let e0 = Log::genesis(1).events()[0].clone();
+        let e0 = Log::genesis(1).expect("seed in range: adattamento meccanico autorizzato (C2)").events()[0].clone();
         let mut e1 = Event::seal(1, 0, EventType::State, Payload::empty(), &e0.hash);
         e1.hash = compute_hash(e1.seq, e1.tick, e1.r#type, &e1.payload.canonical(), &e1.prev_hash);
         let e3 = Event::seal(3, 0, EventType::State, Payload::empty(), &e1.hash);

@@ -52,7 +52,7 @@ fn tick_attesi(n_cicli: u64) -> Vec<u64> {
 #[test]
 fn un_ciclo_emette_3_eventi_stesso_tick_seq_consecutivi() {
     let seed = 1042u64;
-    let mut log = Log::genesis(seed);
+    let mut log = Log::genesis(seed).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let mut rng = Pcg64::new(seed);
 
     cycle::run_cycle(&mut log, &mut rng).expect("il ciclo è legale su un log verificato");
@@ -81,7 +81,7 @@ fn un_ciclo_emette_3_eventi_stesso_tick_seq_consecutivi() {
 #[test]
 fn mai_cicli_parziali_ritmo_sense_action_state() {
     let seed = 1042u64;
-    let mut log = Log::genesis(seed);
+    let mut log = Log::genesis(seed).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let mut rng = Pcg64::new(seed);
     cycle::run_cycles(&mut log, &mut rng, N).expect("N cicli legali");
 
@@ -103,7 +103,7 @@ fn mai_cicli_parziali_ritmo_sense_action_state() {
 #[test]
 fn nessun_tick_salta_sequenza_0_1_1_1_2_2_2() {
     let seed = 1042u64;
-    let mut log = Log::genesis(seed);
+    let mut log = Log::genesis(seed).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let mut rng = Pcg64::new(seed);
     cycle::run_cycles(&mut log, &mut rng, N).expect("N cicli legali");
 
@@ -123,7 +123,7 @@ fn nessun_tick_salta_sequenza_0_1_1_1_2_2_2() {
 #[test]
 fn dopo_n_cicli_tick_n_e_catena_verificabile() {
     let seed = 1042u64;
-    let mut log = Log::genesis(seed);
+    let mut log = Log::genesis(seed).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let mut rng = Pcg64::new(seed);
     cycle::run_cycles(&mut log, &mut rng, N).expect("N cicli legali");
 
@@ -143,11 +143,11 @@ fn determinismo_forte_due_log_indipendenti_byte_identici() {
     let seed = 1042u64;
     let n_cicli = 5u64;
 
-    let mut log_a = Log::genesis(seed);
+    let mut log_a = Log::genesis(seed).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let mut rng_a = Pcg64::new(seed);
     cycle::run_cycles(&mut log_a, &mut rng_a, n_cicli).expect("cicli legali A");
 
-    let mut log_b = Log::genesis(seed);
+    let mut log_b = Log::genesis(seed).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let mut rng_b = Pcg64::new(seed);
     cycle::run_cycles(&mut log_b, &mut rng_b, n_cicli).expect("cicli legali B");
 
@@ -167,11 +167,11 @@ fn determinismo_forte_due_log_indipendenti_byte_identici() {
 #[test]
 fn seme_diverso_produce_log_diverso() {
     let n_cicli = 3u64;
-    let mut log_a = Log::genesis(1042);
+    let mut log_a = Log::genesis(1042).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let mut rng_a = Pcg64::new(1042);
     cycle::run_cycles(&mut log_a, &mut rng_a, n_cicli).expect("cicli legali A");
 
-    let mut log_b = Log::genesis(1043);
+    let mut log_b = Log::genesis(1043).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let mut rng_b = Pcg64::new(1043);
     cycle::run_cycles(&mut log_b, &mut rng_b, n_cicli).expect("cicli legali B");
 
@@ -192,7 +192,7 @@ fn budget_draw_1_per_tick_0_per_la_policy() {
     let seed = 1042u64;
     let n_cicli = 5u64;
 
-    let mut log = Log::genesis(seed);
+    let mut log = Log::genesis(seed).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let mut rng = Pcg64::new(seed);
     cycle::run_cycles(&mut log, &mut rng, n_cicli).expect("cicli legali");
 
@@ -248,7 +248,7 @@ fn budget_draw_1_per_tick_0_per_la_policy() {
 #[test]
 fn mossa_e_parse_stimolo_mod_3_su_piu_tick() {
     let seed = 1042u64;
-    let mut log = Log::genesis(seed);
+    let mut log = Log::genesis(seed).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let mut rng = Pcg64::new(seed);
     let n_cicli = 6u64;
     cycle::run_cycles(&mut log, &mut rng, n_cicli).expect("cicli legali");
@@ -300,7 +300,7 @@ fn mossa_e_parse_stimolo_mod_3_su_piu_tick() {
 #[test]
 fn stimolo_sola_stringa_di_cifre_senza_segno_ne_zeri_in_testa() {
     let seed = 1042u64;
-    let mut log = Log::genesis(seed);
+    let mut log = Log::genesis(seed).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let mut rng = Pcg64::new(seed);
     let n_cicli = 10u64;
     cycle::run_cycles(&mut log, &mut rng, n_cicli).expect("cicli legali");
@@ -348,7 +348,7 @@ fn stimolo_oltre_i64_max_parse_completo_senza_mascheratura() {
         .expect("nel corpus 1000–1099 esiste un primo draw oltre i64::MAX");
     assert!(seed >= 1000 && seed <= 1099);
 
-    let mut log = Log::genesis(seed);
+    let mut log = Log::genesis(seed).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let mut rng = Pcg64::new(seed);
     cycle::run_cycle(&mut log, &mut rng).expect("ciclo legale con stimolo oltre i64");
 
@@ -391,7 +391,7 @@ fn stimolo_oltre_i64_max_parse_completo_senza_mascheratura() {
 #[test]
 fn fold_su_log_intero_con_ultima_snapshot_di_state() {
     let seed = 1042u64;
-    let mut log = Log::genesis(seed);
+    let mut log = Log::genesis(seed).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let mut rng = Pcg64::new(seed);
     cycle::run_cycles(&mut log, &mut rng, N).expect("N cicli legali");
     log.verify().expect("log verificato prima della fold");

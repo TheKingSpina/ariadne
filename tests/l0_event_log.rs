@@ -68,7 +68,7 @@ fn preimage(seq: u64, tick: u64, event_type: &str, payload_json: &str, prev_hash
 /// Log di prova: genesi + tre eventi con payload {"gain": n} (nessuna collusione
 /// con le sottostringhe "seq" o "hash" usate dai test di tampering).
 fn log_di_prova() -> Log {
-    let mut log = Log::genesis(1042);
+    let mut log = Log::genesis(1042).expect("seed in range: adattamento meccanico autorizzato (C2)");
     for (tick, gain) in [(1, 1i64), (1, 2), (1, 3)] {
         log.append(tick, EventType::State, Payload::from_pairs(vec![("gain", Value::Int(gain))]))
             .unwrap();
@@ -82,7 +82,7 @@ fn log_di_prova() -> Log {
 
 #[test]
 fn test_genesis_prev_hash_zeroes_and_shape() {
-    let log = Log::genesis(1042);
+    let log = Log::genesis(1042).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let events = log.events();
     assert_eq!(events.len(), 1, "la genesi è il solo evento iniziale");
     let g = &events[0];
@@ -104,7 +104,7 @@ fn test_genesis_golden_hash_constant() {
     // Il byte-format del preimage è fissato: l'hash della genesi con seed 1042
     // deve agganciarsi a questo valore precomputato dall'esterno (shasum -a 256
     // su byte scritti a mano, separatore 0x1F — nessuna funzione del crate).
-    let log = Log::genesis(1042);
+    let log = Log::genesis(1042).expect("seed in range: adattamento meccanico autorizzato (C2)");
     assert_eq!(log.events()[0].hash, GENESIS_1042_HASH);
     // e la serializzazione canonica della riga genesi è byte per byte quella attesa
     assert_eq!(log.to_jsonl(), format!("{GENESIS_1042_LINE}\n"));
@@ -118,7 +118,7 @@ fn test_genesis_golden_hash_constant() {
 fn test_genesis_state_is_string_not_integer() {
     // chiude D1: `state` nel payload canonico è una stringa JSON ("..."),
     // non un intero; `seed` resta intero.
-    let payload = Log::genesis(1042).events()[0].payload.canonical();
+    let payload = Log::genesis(1042).expect("seed in range: adattamento meccanico autorizzato (C2)").events()[0].payload.canonical();
     assert!(payload.contains(r#""state":"43149974864253806286336044685702662359""#),
         "state è stringa: {payload}");
     assert!(payload.contains(r#""seed":1042,"#),
@@ -134,7 +134,7 @@ fn test_genesis_state_matches_engine_state_decimal() {
     use ariadne::prng::Pcg64;
     let atteso = Pcg64::new(1042).state_decimal();
     assert_eq!(atteso, GENESIS_1042_STATE_DEC, "lo stato d'engine non è cambiato");
-    let log = Log::genesis(1042);
+    let log = Log::genesis(1042).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let payload = log.events()[0].payload.clone();
     let state = match payload.get("state") {
         Some(ariadne::Value::Str(s)) => s.clone(),
@@ -147,7 +147,7 @@ fn test_genesis_state_matches_engine_state_decimal() {
 fn test_genesis_state_string_format() {
     // formato congelato del campo `state`: solo cifre decimali, nessun segno,
     // nessuno zero in testa, al più 39 caratteri (128 bit).
-    let state = match Log::genesis(1042).events()[0].payload.get("state") {
+    let state = match Log::genesis(1042).expect("seed in range: adattamento meccanico autorizzato (C2)").events()[0].payload.get("state") {
         Some(ariadne::Value::Str(s)) => s.clone(),
         other => panic!("state non è una stringa: {other:?}"),
     };
@@ -183,7 +183,7 @@ fn test_hash_chain_end_to_end() {
 
 #[test]
 fn test_event_types_constrained_to_sense_action_state() {
-    let mut log = Log::genesis(1);
+    let mut log = Log::genesis(1).expect("seed in range: adattamento meccanico autorizzato (C2)");
     log.append(1, EventType::Sense, Payload::empty()).unwrap();
     log.append(1, EventType::Action, Payload::empty()).unwrap();
     let types: Vec<&str> = log.events().iter().map(|e| e.r#type.as_str()).collect();
@@ -317,7 +317,7 @@ fn test_log_is_append_only_no_mutation_truncation_or_reorder() {
 fn test_replay_prefix_byte_per_byte() {
     // riplay del prefisso storico: costruito due volte indipendentemente → stesse byte
     let build = || {
-        let mut log = Log::genesis(1000);
+        let mut log = Log::genesis(1000).expect("seed in range: adattamento meccanico autorizzato (C2)");
         log.append(1, EventType::Sense, Payload::from_pairs(vec![("stimolo", Value::Int(42))])).unwrap();
         log.append(1, EventType::Action, Payload::from_pairs(vec![("mossa", Value::Str("V".to_string()))])).unwrap();
         log.append(2, EventType::State, Payload::from_pairs(vec![("gain", Value::Int(6))])).unwrap();
@@ -343,7 +343,7 @@ fn test_replay_prefix_byte_per_byte() {
 
 #[test]
 fn test_compensating_event_payload_and_history_intact() {
-    let mut log = Log::genesis(1042);
+    let mut log = Log::genesis(1042).expect("seed in range: adattamento meccanico autorizzato (C2)");
     log.append(1, EventType::Action, Payload::from_pairs(vec![("gain", Value::Int(5))])).unwrap();
     let history_before = log.to_jsonl();
 
@@ -376,7 +376,7 @@ fn test_compensating_event_payload_and_history_intact() {
 #[test]
 fn test_compensating_payload_carries_most_recent_state_snapshot_exact() {
     const SNAP_SECOND: &str = "918273645040506070809101112131415161718";
-    let mut log = Log::genesis(1042);
+    let mut log = Log::genesis(1042).expect("seed in range: adattamento meccanico autorizzato (C2)");
     log.append(1, EventType::Sense, Payload::empty()).unwrap();
     log.append(1, EventType::State, Payload::from_pairs(vec![
         ("state", Value::Str(SNAP_SECOND.to_string()))
@@ -405,7 +405,7 @@ fn test_compensating_payload_carries_most_recent_state_snapshot_exact() {
 /// Su un log di sola genesi: il compensativo copia lo snapshot di GENESI.
 #[test]
 fn test_compensating_state_on_genesis_only_log_copies_genesis_snapshot() {
-    let mut log = Log::genesis(1042);
+    let mut log = Log::genesis(1042).expect("seed in range: adattamento meccanico autorizzato (C2)");
     let history_before = log.to_jsonl();
     let comp = log.compensate(0, "genesi corretta senza riscritture", 0).unwrap();
     assert_eq!(comp.seq, 1, "il compensativo è il secondo evento");
