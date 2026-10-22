@@ -1,7 +1,7 @@
 ---
 description: Reviewer — esegue l'audit finale del codice contro la SPEC di Ariadne in sola lettura, citando file e riga per ogni riscontro.
 mode: all
-model: opencode/nemotron-3-ultra-free
+model: opencode/nemotron-3.5-super-vl-free
 steps: 35
 permissions:
   - action: edit

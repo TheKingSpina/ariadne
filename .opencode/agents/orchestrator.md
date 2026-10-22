@@ -1,7 +1,7 @@
 ---
 description: Orchestratore — coordina producer, tester e reviewer sui livelli di Ariadne, rilayando i risultati testualmente senza mai scrivere codice né giudicare l'accettazione.
 mode: primary
-model: opencode/deepseek-v4.1-flash-free#medium
+model: openai/gpt-6-luna#medium
 steps: 20
 permissions:
   - action: edit

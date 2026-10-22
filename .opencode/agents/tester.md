@@ -1,7 +1,7 @@
 ---
 description: Tester — verifica indipendentemente l'implementazione contro la SPEC di Ariadne eseguendo i test, senza mai scrivere o correggere codice di produzione.
 mode: all
-model: opencode/deepseek-v4.1-flash-free#high
+model: opencode/nemotron-3-ultra-free
 steps: 45
 permissions:
   - action: edit
