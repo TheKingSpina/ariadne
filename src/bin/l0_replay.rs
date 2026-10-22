@@ -32,7 +32,8 @@
 //! - Successo: exit code 0, su stdout `Log::genesis(seed)` + `ticks` cicli
 //!   serializzati in JSONL canonico, `'\n'` finale già incluso da `to_jsonl`:
 //!   scritto byte-per-byte, senza aggiunge né lacune.
-//! - Argomento mancante, non numerico, negativo, oltre u64 o superfluo:
+//! - Argomento mancante, non numerico, negativo, oltre u64, oltre i64::MAX
+//!   (Log::genesis rifiuta il wrap silenzioso) o superfluo:
 //!   messaggio su stderr, exit code 1, stdout VUOTO (nessun output parziale).
 
 use std::process::ExitCode;
@@ -44,12 +45,13 @@ use ariadne::{cycle, Log};
 fn main() -> ExitCode {
     match run() {
         Ok((seed, ticks)) => {
-            // genesis è fallibile dal dispatch C1: rifiuta seed > i64::MAX con
-            // Error::Seed. Il parse CLI ammette qualunque u64, quindi l'expect
-            // può scattare per seed ≥ 2^63: panic con stdout vuoto (genesis
-            // precede ogni stampa del log).
+            // genesis è fallibile dal dispatch C1 (rifiuto di seed > i64::MAX
+            // con Error::Seed): il parse CLI ha GIÀ filtrato quel caso con
+            // stderr + exit 1, quindi l'expect è una guardia irraggiungibile —
+            // input invalido NON trasforma più il processo in panic: fallisce
+            // bene, stdout vuoto, exit 1.
             let mut log = Log::genesis(seed)
-                .expect("seed oltre i64::MAX: rifiutato da Log::genesis, nessun wrap silenzioso");
+                .expect("irraggiungibile: il parse CLI filtra già seed > i64::MAX");
             let mut rng = Pcg64::new(seed);
             match cycle::run_cycles(&mut log, &mut rng, ticks) {
                 Ok(()) => {
@@ -104,6 +106,16 @@ fn run() -> Result<(u64, u64), String> {
 
     let seed = seed
         .ok_or_else(|| "l0_replay: manca --seed <u64> (uso: --seed <u64> --ticks <u64>)".to_string())?;
+    // Seed oltre i64::MAX (2^63): Log::genesis lo rifiuta RUMOROSAMENTE (Error::Seed,
+    // nessun wrap silenzioso nel payload). Qui diventa rifiuto BEN VENUTO del CLI:
+    // stderr + exit 1, stdout vuoto — l'input invalido non deve far esplodere il
+    // processo in panic (fix C1-fix2).
+    if seed > i64::MAX as u64 {
+        return Err(format!(
+            "l0_replay: seed {seed} oltre i64::MAX: Log::genesis lo rifiuta \
+             (contatore i64 nel payload, nessun wrap silenzioso)"
+        ));
+    }
     let ticks = ticks
         .ok_or_else(|| "l0_replay: manca --ticks <u64> (uso: --seed <u64> --ticks <u64>)".to_string())?;
     Ok((seed, ticks))
