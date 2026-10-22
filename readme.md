@@ -15,3 +15,9 @@ Ariadne è un'architettura cognitiva a livelli costruita attorno a un'unica veri
 **Stato**
 - L0_SPEC v0.2 freezata: schema evento, catena di hash, correzione compensativa, criteri d'uscita.
 - Prossimo passo: implementazione del substrato L0 e test di replay bit-perfetto.
+
+**Stack e deploy**
+- **Linguaggio L0**: Rust — fold deterministica, SHA-256, no-GC per latenza prevedibile e borrow checker contro l'undefined behavior.
+- **Distribuzione**: binario statico unico, zero runtime.
+- **Modello deploy**: local-first sul Mac mini, col substrato incorporato; eventuale modalità daemon server come estensione futura, mai come prerequisito.
+- **Memoria di sviluppo**: Mnemosyne come registro dei ricordi di progetto, con approvazione in governance.
