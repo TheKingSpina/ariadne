@@ -12,7 +12,7 @@
 //!   serialize(parse(s)) == s          (byte-per-byte, per ogni s canonico)
 //! e ogni forma fuori dall'insieme è un rifiuto di Schema.
 
-use ariadne::{Error, EventType, Log, Payload, Value};
+use ariadne::{Error, Log, Payload, Value};
 
 /// segnaposto prev_hash: from_jsonl è schema-only, la catena la verifica `verify`.
 const HEX64_ZEROS: &str = "0000000000000000000000000000000000000000000000000000000000000000";
