@@ -1,0 +1,15 @@
+[package]
+name = "ariadne"
+version = "0.1.0"
+edition = "2021"
+description = "L0 — substrato: log append-only, schema evento, catena di hash, correzioni compensative"
+
+# COMMIT TEST-ONLY: sha2 serve ai test per ricalcolare gli SHA-256
+# indipendentemente dall'implementazione. La libreria di produzione
+# con la stessa dipendenza dichiarata arriva nel commit successivo.
+[dev-dependencies]
+sha2 = "0.10"
+
+[[test]]
+name = "l0_event_log"
+path = "tests/l0_event_log.rs"
