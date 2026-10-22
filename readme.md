@@ -14,7 +14,13 @@ Ariadne è un'architettura cognitiva a livelli costruita attorno a un'unica veri
 
 **Stato**
 - L0_SPEC v0.2 freezata: schema evento, catena di hash, correzione compensativa, criteri d'uscita.
-- Prossimo passo: implementazione del substrato L0 e test di replay bit-perfetto.
+- Le SPEC di tutti i livelli stanno in `spec/`, una per file: `spec/L<n>_SPEC_v<versione>.md`.
+- **`spec/L0_SPEC_v0.3.md` firmato** (addendum alla v0.2, prevale in caso di divergenza):
+  compensativo autodescrittivo, seeding canonico splitmix64 + PCG64, parser severo
+  sull'intera riga.
+- **L0 implementato**: log append-only, replay bit-perfetto a due processi, 80 test
+  verdi (debug e release). Audit del reviewer a `a02b66a`: nessuna violazione nota.
+- Prossimo passo: accettazione di L0 da parte dell'umano, poi L1.
 
 **Stack e deploy**
 - **Linguaggio L0**: Rust — fold deterministica, SHA-256, no-GC per latenza prevedibile e borrow checker contro l'undefined behavior.
