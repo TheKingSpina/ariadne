@@ -20,7 +20,9 @@ mod log;
 mod payload;
 
 pub mod prng;
+pub mod state;
 
 pub use event::{compute_hash, Event, EventType, GENESIS_PREV_HASH};
 pub use log::{Error, Log};
 pub use payload::{Payload, Value};
+pub use state::{State, StateError};
