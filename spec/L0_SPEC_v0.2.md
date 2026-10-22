@@ -1,5 +1,8 @@
 **Ariadne — L0_SPEC v0.2**
 
+> **Emendata da `spec/L0_SPEC_v0.3.md` (firmato, 22 ottobre 2026).** In caso di
+> divergenza prevale la v0.3. Nota di sola segnalazione, nessun cambio di contenuto.
+
 **1. Perimetro L0**
 - Unico substrato: log append-only aciclico.
 - Vietati: wall-clock, I/O esterna, rete, float.
