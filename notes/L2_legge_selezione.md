@@ -135,3 +135,16 @@ select: solo `at`,`ups`,`downs`; summary: solo `expulsions`,`text`; barrier:
 solo `phase`) → `L2Error::Schema`. In `config`, `k`/`tau` mancanti, non-i64
 o fuori dominio (`k≥0`, `tau≥1`) → `L2Error::Config`. Eventi senza `l2`
 restano fuori da L2, come da L2.1.
+
+**L2.22 — Semantica di `base` in `evaluate` (24/10/2026, 11ª domanda).**
+`ActiveSet` porta i campi `log_len` (numero di eventi L0 consumati) e
+`head_hash`. `evaluate(log, base)` richiede **coerenza di prefisso**: il log
+deve avere ≥ `log_len` eventi e l'hash dell'evento in posizione `log_len−1`
+deve coincidere con `base.head_hash`; in caso contrario → `L2Error::HeadMatch`.
+La coppia (log, base) NON richiede che `base` copra l'intero log: il log può
+estendersi oltre, e le decisioni riguardano la coda dopo `base.log_len`. Dentro
+la coda, se dopo `base.log_len` esistono già eventi `l2` ("select"/"summary"),
+essi sono autorevoli (L2.11/L2.14) e si considerano solo gli eventi successivi
+all'ultimo di essi. Un `build_active` a fine log equivale a `log_len` = totale
+eventi. Il check di L2.12 restaredicate: `head_hash` del log al termine
+dell'ultimo evento consumato deve coincidere con `log.events()[base.log_len−1].hash`.
