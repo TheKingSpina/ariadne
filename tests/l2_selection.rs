@@ -17,7 +17,8 @@ fn integer_salience_budget_provenance_and_encoding() {
     l2(&mut log,0,"config",vec![("k",Value::Int(1)),("tau",Value::Int(1))]);
     append(&mut log,1,vec![("nodes",node("A"))]);
     append(&mut log,2,vec![("nodes",node("B"))]);
-    let ds=selection::evaluate(&log,&selection::build_active(&Log::genesis(1).unwrap()).unwrap()).unwrap();
+    let prefix=Log::genesis(1).unwrap();
+    let ds=selection::evaluate(&log,&selection::build_active(&prefix).unwrap()).unwrap();
     assert_eq!(ds,vec![Decision::Select{at:2,tick:2,ups:vec![2],downs:vec![1]}]);
     assert_eq!(2u64.pow(24)>>1,1u64<<23); // independent integer golden
     assert_eq!(selection::encode(&ds[0]),vec![("l2".into(),Value::Str("select".into())),("at".into(),Value::Int(2)),("downs".into(),Value::Str("[1]".into())),("ups".into(),Value::Str("[2]".into()))]);
@@ -36,16 +37,15 @@ fn malformed_config_and_barriers_are_errors_but_open_eof_is_valid() {
 
 #[test]
 fn head_hash_mismatch_is_reported() {
-    let log=Log::genesis(1).unwrap(); let mut base=selection::build_active(&log).unwrap();
-    let mut changed=log.clone(); append(&mut changed,1,vec![("nodes",node("A"))]);
+    let log=Log::genesis(1).unwrap(); let base=selection::build_active(&log).unwrap();
+    let changed=Log::genesis(2).unwrap();
     assert_eq!(selection::evaluate(&changed,&base).unwrap_err(),L2Error::HeadMatch);
-    let _=&mut base;
 }
 
 #[test]
 fn salience_uses_integer_age_tau_and_accumulates_activations(){
- let mut x=Log::genesis(1).unwrap();config(&mut x,0,3,2);nodes(&mut x,1,&["A"]);nodes(&mut x,2,&["A"]);nodes(&mut x,4,&["B"]);
- let ds=selection::evaluate(&x,&selection::build_active(&Log::genesis(1).unwrap()).unwrap()).unwrap();
+ let mut x=Log::genesis(1).unwrap();let prefix=x.clone();config(&mut x,0,3,2);nodes(&mut x,1,&["A"]);nodes(&mut x,2,&["A"]);nodes(&mut x,4,&["B"]);
+ let ds=selection::evaluate(&x,&selection::build_active(&prefix).unwrap()).unwrap();
  assert!(ds.iter().any(|d|matches!(d,Decision::Select{at:4,..})));
  assert_eq!(1u64<<24,16_777_216);assert_eq!((1u64<<24)>>1,8_388_608); // age 0 / age 3 at tau 2
 }
@@ -60,11 +60,11 @@ fn edge_activation_is_fixed_single_and_has_l1_provenance(){
 
 #[test]
 fn budget_zero_ties_and_only_current_candidates(){
- let mut x=Log::genesis(1).unwrap();config(&mut x,0,0,1);nodes(&mut x,1,&["A","B"]);
- let ds=selection::evaluate(&x,&selection::build_active(&Log::genesis(1).unwrap()).unwrap()).unwrap();
+ let mut x=Log::genesis(1).unwrap();let prefix=x.clone();config(&mut x,0,0,1);nodes(&mut x,1,&["A","B"]);
+ let ds=selection::evaluate(&x,&selection::build_active(&prefix).unwrap()).unwrap();
  assert!(ds.iter().any(|d|matches!(d,Decision::Select{downs,..} if downs.len()==2)));
- let mut y=Log::genesis(1).unwrap();config(&mut y,0,1,1);nodes(&mut y,1,&["A"]);nodes(&mut y,2,&["B"]);
- let d=selection::evaluate(&y,&selection::build_active(&Log::genesis(1).unwrap()).unwrap()).unwrap();assert!(d.iter().any(|x|matches!(x,Decision::Select{at:2,..})));
+ let mut y=Log::genesis(1).unwrap();let prefix=y.clone();config(&mut y,0,1,1);nodes(&mut y,1,&["A"]);nodes(&mut y,2,&["B"]);
+ let d=selection::evaluate(&y,&selection::build_active(&prefix).unwrap()).unwrap();assert!(d.iter().any(|x|matches!(x,Decision::Select{at:2,..})));
 }
 
 #[test]
@@ -79,7 +79,7 @@ fn config_replacement_and_l2_21_schema_rules(){
 fn barriers_close_errors_and_summary_order_and_content(){
  let mut x=Log::genesis(1).unwrap();config(&mut x,0,1,1);l2(&mut x,0,"barrier",vec![]);nodes(&mut x,1,&["A","B"]);
  l2(&mut x,2,"barrier",vec![("phase",Value::Str("close".into()))]);
- let b=selection::build_active(&x).unwrap();let ds=selection::evaluate(&x,&b).unwrap();assert!(ds.is_empty());
+ assert_eq!(selection::build_active(&x).unwrap_err(),L2Error::Barrier);
  let mut bad=Log::genesis(1).unwrap();l2(&mut bad,0,"barrier",vec![("phase",Value::Str("close".into()))]);assert_eq!(selection::build_active(&bad).unwrap_err(),L2Error::Barrier);
  let mut bad=Log::genesis(1).unwrap();l2(&mut bad,0,"barrier",vec![("phase",Value::Str("later".into()))]);assert_eq!(selection::build_active(&bad).unwrap_err(),L2Error::Barrier);
 }
