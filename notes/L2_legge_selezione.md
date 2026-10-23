@@ -19,6 +19,10 @@ errore, non aggiorna default impliciti.
 **L2.3 — Attivazione (Q2).** Un evento L0 con estrazioni L1 attiva ogni
 elemento che dichiara (ragso diretto) o menzionato (endpoint di arco) nello
 stesso evento; una sola attivazione per elemento per seq, mai in replay.
+L'**identità** dell'elemento è l'id L1: SHA-256 canonico json di `{kind,key}`
+(stessa convenzione di `src/view.rs`). Il *contaggio* attivazioni avviene su
+ogni evento del log con estrazioni, non sulla vista aggregata: la vista serve
+per l'id canonico e per gli archi (L2.5), il payload grezzo per le menzioni.
 
 **L2.4 — Salienza (Q3).** score(e, t) = Σ_att contributi interi:
 contribution(a) = `2^24 >> m`, con `m = min(⌊(t − seq_a) / tau⌋, 24)`,
