@@ -129,6 +129,25 @@ fn closing_barrier_emits_provenance_summary_before_selection() {
  ids.sort(); assert_eq!(*text,ids.join("|"));
 }
 
+#[test]
+fn equal_score_eviction_prefers_newer_origin_then_greater_id() {
+ // Different origin seq: equal age bucket and score at the second insertion.
+ let mut x=Log::genesis(1).unwrap(); let base=x.clone();
+ config(&mut x,0,1,100); nodes(&mut x,1,&["A"]); nodes(&mut x,2,&["B"]);
+ let ds=selection::evaluate(&x,&selection::build_active(&base).unwrap()).unwrap();
+ assert!(ds.iter().any(|d|matches!(d,Decision::Select{at:3,downs,..} if downs==&vec![3])));
+
+ // Same origin seq: the close summary identifies the expelled L1 id.
+ let mut y=Log::genesis(1).unwrap(); let base=y.clone(); config(&mut y,0,1,1);
+ l2(&mut y,1,"barrier",vec![]); nodes(&mut y,2,&["A","B"]);
+ l2(&mut y,3,"barrier",vec![("phase",Value::Str("close".into()))]);
+ let ds=selection::evaluate(&y,&selection::build_active(&base).unwrap()).unwrap();
+ let Decision::Summary{text,..}=ds.iter().find(|d|matches!(d,Decision::Summary{..})).unwrap() else {panic!()};
+ let view=ariadne::view::build(&y).unwrap();
+ let greater=view.nodes.iter().filter(|n|n.origin_seq==3).map(|n|n.id.clone()).max().unwrap();
+ assert_eq!(text,&greater);
+}
+
 fn view_ids(log:&Log, origins:&[u64])->Vec<String>{
  let view=ariadne::view::build(log).unwrap();
  view.nodes.iter().filter(|n|origins.contains(&n.origin_seq)).map(|n|n.id.clone()).collect()
