@@ -23,6 +23,7 @@ mod log;
 mod payload;
 pub mod prng;
 pub mod state;
+pub mod view;
 
 pub use event::{compute_hash, Event, EventType, GENESIS_PREV_HASH};
 pub use log::{Error, Log};
