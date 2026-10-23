@@ -122,7 +122,8 @@ errore, nessuna scrittura.
 
 **L2.20 — API di `src/selection.rs` (D8).** Solo cose pubbliche: 
 - `pub struct ActiveSet`; `pub fn build_active(log: &Log) -> Result<ActiveSet, L2Error>` = replay autorevole a fine log (L2.11, con check `head_hash` L2.12);
-- `pub fn evaluate(log: &Log, base: &ActiveSet) -> Result<Vec<Decision>, L2Error>` = decisioni nuove per eventi L0 dopo l'ultima decisione già registrata nel log;
-- `pub fn encode(d: &Decision) -> Vec<(String, Value)>` = encoding payload L0 (`l2`, `at`, `ups`, `downs`; valore `Value::Str`) delle decisioni nuove;
+- `pub enum Decision { Select { at: u64, tick: u64, ups: Vec<u64>, downs: Vec<u64> }, Summary { expulsions: Vec<u64>, text: String } }` (tipo pubblico);
+- `pub fn evaluate(log: &Log, base: &ActiveSet) -> Result<Vec<Decision>, L2Error>` = decisioni nuove per eventi L0 dopo l'ultima decisione già registrata nel log. L'output include sia `Select` sia `Summary`: in ordine di seq; **al momento della chiusura di una finestra, il `Summary` di quella finestra precede l'eventuale `Select` generato dallo stesso evento di chiusura** (L2.15: la sintesi è il primo evento L2 dopo la chiusura). La decisione select resta al massimo una per evento di valutazione (L2.7). Un Summary esiste solo se la finestra ha avuto almeno un'espulsione;
+- `pub fn encode(d: &Decision) -> Vec<(String, Value)>` = encoding payload L0: per `Select` chiavi `l2="select"`, `at`, `ups`, `downs`; per `Summary` chiavi `l2="summary"`, `expulsions`, `text`; liste e numeri come stringhe JSON canoniche/i64 per la legge esistente (`Value::Str` per le liste, `Value::Int` per `at`);
 - `pub enum L2Error { Config, Schema, Barrier, HeadMatch }`.
-Append via la API di log resta al chiamante. Zero I/O84, zero wall-clock, zero RNG.
+Append via la API di log resta al chiamante. Zero I/O, zero wall-clock, zero RNG.
