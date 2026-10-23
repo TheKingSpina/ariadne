@@ -127,3 +127,11 @@ errore, nessuna scrittura.
 - `pub fn encode(d: &Decision) -> Vec<(String, Value)>` = encoding payload L0: per `Select` chiavi `l2="select"`, `at`, `ups`, `downs`; per `Summary` chiavi `l2="summary"`, `expulsions`, `text`; liste e numeri come stringhe JSON canoniche/i64 per la legge esistente (`Value::Str` per le liste, `Value::Int` per `at`);
 - `pub enum L2Error { Config, Schema, Barrier, HeadMatch }`.
 Append via la API di log resta al chiamante. Zero I/O, zero wall-clock, zero RNG.
+
+**L2.21 — Rigore delle chiavi (24/10/2026, 10ª domanda).** Un payload con
+`l2` presente ma valore fuori dal dominio di L2.1 → `L2Error::Schema`. Chiavi
+extra rispetto alle prescritte in un evento `l2` (config: solo `k`,`tau`;
+select: solo `at`,`ups`,`downs`; summary: solo `expulsions`,`text`; barrier:
+solo `phase`) → `L2Error::Schema`. In `config`, `k`/`tau` mancanti, non-i64
+o fuori dominio (`k≥0`, `tau≥1`) → `L2Error::Config`. Eventi senza `l2`
+restano fuori da L2, come da L2.1.
