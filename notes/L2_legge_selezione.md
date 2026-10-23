@@ -71,3 +71,58 @@ ralcolamento sono un mismatch dichiarato, non un errore catchable.
 `view.head_hash` corrisponda all'hash dell'ultimo evento del log prima di
 valutare; mi dash se non coincide. Zero scritture su log e vista oltre agli
 eventi L2 propri (L2.1).
+
+---
+
+# Emendamenti L2.13–L2.20 (24/10/2026, risposte alle 8 domande del producer; firmati per delega umana, da audit del reviewer)
+
+**L2.13 — Estrazione e menzioni (D1).** «Estrazioni» = chiavi payload top-level
+`nodes`/`edges`, stringhe con array JSON canonico interno, secondo il criterio
+F1 di `spec/L1_SPEC_v0.2.md`; stessi vincoli di parse (forma non canonica =
+errore). Menzione = dichiarazione diretta in `nodes` o endpoint di arco in
+`edges`, nello stesso evento. Identità = id L1. Se un elemento è sia
+dichiarato sia menzionato nello stesso evento, una sola attivazione.
+
+**L2.14 — `evaluate` ed eventi L2 già presenti (D2).** `build_active` è il
+replay autorevole a fine log (L2.11). `evaluate(log, base)` produce
+decisioni SOLO per eventi L0 successivi all'ultima decisione già registrata
+nel log; gli eventi `l2` preesistenti non si ri-emettono. Append resta al
+chiamante via API L0: il builder L2 non scrive.
+
+**L2.15 — Emissione della sintesi (D3).** Consolidamento = un solo evento
+`l2="summary"` emesso quando la finestra offline si chiude (via
+`phase="close"` o primo evento L0 non-`l2` successivo), come primo evento L2
+dopo la chiusura. Finestra chiusa senza espulsioni = nessun summary. La
+barrier stessa non scrive: dichiara solo apertura/chiusura.
+
+**L2.16 — Contenuto di summary (D4).** `expulsions` = stringa JSON canonico
+di array delle `origin_seq` (i64) degli elementi espulsi nella finestra,
+dedup e ordinato crescente. `text` = id L1 (hex minuscolo a 64) degli
+espulsi, ordine lessicografico di id, separati da `|`. Le seq di
+`expulsions` sono le origin_seq L1 degli elementi (L1 D17/D18), non le seq
+delle decisioni select.
+
+**L2.17 — Candidati all'ingresso (D5).** Solo gli elementi attivati
+dall'evento corrente (L2.3) sono candidati all'ingresso; nessun richiamo di
+elementi storici non attivati. Parità: entra il min seq di origine;
+l'espulsione (L2.6) si valuta sull'insieme aggregato attivi+candidati.
+
+**L2.18 — Provenienza del select (D6).** L'evento `l2="select"` porta la
+chiave `at` (i64) = seq dell'evento L0 di valutazione che ha generato la
+decisione: è così che la checklist «decisione ancorata a una seq di
+origine» è soddisfatta. Il tick dell'evento select = tick dell'evento di
+valutazione.
+
+**L2.19 — Semantica di `phase="close"` (D7).** `l2="barrier"` con payload
+`{"phase":"close"}` chiude la finestra corrente nello stesso evento; una
+close senza finestra aperta = errore. Barrier senza `phase` apre; una
+seconda apertura senza close = errore. Altro valore di `phase` = errore. Se
+in replay si raggiunge la fine del log con finestra ancora aperta: nessun
+errore, nessuna scrittura.
+
+**L2.20 — API di `src/selection.rs` (D8).** Solo cose pubbliche: 
+- `pub struct ActiveSet`; `pub fn build_active(log: &Log) -> Result<ActiveSet, L2Error>` = replay autorevole a fine log (L2.11, con check `head_hash` L2.12);
+- `pub fn evaluate(log: &Log, base: &ActiveSet) -> Result<Vec<Decision>, L2Error>` = decisioni nuove per eventi L0 dopo l'ultima decisione già registrata nel log;
+- `pub fn encode(d: &Decision) -> Vec<(String, Value)>` = encoding payload L0 (`l2`, `at`, `ups`, `downs`; valore `Value::Str`) delle decisioni nuove;
+- `pub enum L2Error { Config, Schema, Barrier, HeadMatch }`.
+Append via la API di log resta al chiamante. Zero I/O84, zero wall-clock, zero RNG.
