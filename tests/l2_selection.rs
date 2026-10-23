@@ -16,12 +16,12 @@ fn integer_salience_budget_provenance_and_encoding() {
     let mut log=Log::genesis(1).unwrap();
     l2(&mut log,0,"config",vec![("k",Value::Int(1)),("tau",Value::Int(1))]);
     append(&mut log,1,vec![("nodes",node("A"))]);
+    let prefix=log.clone();
     append(&mut log,2,vec![("nodes",node("B"))]);
-    let prefix=Log::genesis(1).unwrap();
     let ds=selection::evaluate(&log,&selection::build_active(&prefix).unwrap()).unwrap();
-    assert_eq!(ds,vec![Decision::Select{at:2,tick:2,ups:vec![2],downs:vec![1]}]);
+    assert_eq!(ds,vec![Decision::Select{at:3,tick:2,ups:vec![3],downs:vec![2]}]);
     assert_eq!(2u64.pow(24)>>1,1u64<<23); // independent integer golden
-    assert_eq!(selection::encode(&ds[0]),vec![("l2".into(),Value::Str("select".into())),("at".into(),Value::Int(2)),("downs".into(),Value::Str("[1]".into())),("ups".into(),Value::Str("[2]".into()))]);
+    assert_eq!(selection::encode(&ds[0]),vec![("l2".into(),Value::Str("select".into())),("at".into(),Value::Int(3)),("ups".into(),Value::Str("[3]".into())),("downs".into(),Value::Str("[2]".into()))]);
 }
 
 #[test]
