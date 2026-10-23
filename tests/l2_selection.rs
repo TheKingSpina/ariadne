@@ -7,6 +7,9 @@ fn l2(log: &mut Log, tick: u64, tag: &str, rest: Vec<(&str, Value)>) {
     let mut p = vec![("l2", Value::Str(tag.into()))]; p.extend(rest); append(log,tick,p)
 }
 fn node(key: &str) -> Value { Value::Str(format!("[{{\"key\":\"{key}\",\"kind\":\"letter\"}}]")) }
+fn config(log:&mut Log,tick:u64,k:i64,tau:i64){l2(log,tick,"config",vec![("k",Value::Int(k)),("tau",Value::Int(tau))]);}
+fn nodes(log:&mut Log,tick:u64,keys:&[&str]){let s=format!("[{}]",keys.iter().map(|k|format!("{{\"key\":\"{k}\",\"kind\":\"letter\"}}")).collect::<Vec<_>>().join(","));append(log,tick,vec![("nodes",Value::Str(s))]);}
+fn edge_log()->Log{let mut x=Log::genesis(1).unwrap();config(&mut x,0,2,2);nodes(&mut x,1,&["A","B"]);append(&mut x,2,vec![("edges",Value::Str("[{\"dst_key\":\"B\",\"dst_kind\":\"letter\",\"rel\":\"link\",\"src_key\":\"A\",\"src_kind\":\"letter\"}]".into()))]);x}
 
 #[test]
 fn integer_salience_budget_provenance_and_encoding() {
@@ -37,4 +40,53 @@ fn head_hash_mismatch_is_reported() {
     let mut changed=log.clone(); append(&mut changed,1,vec![("nodes",node("A"))]);
     assert_eq!(selection::evaluate(&changed,&base).unwrap_err(),L2Error::HeadMatch);
     let _=&mut base;
+}
+
+#[test]
+fn salience_uses_integer_age_tau_and_accumulates_activations(){
+ let mut x=Log::genesis(1).unwrap();config(&mut x,0,3,2);nodes(&mut x,1,&["A"]);nodes(&mut x,2,&["A"]);nodes(&mut x,4,&["B"]);
+ let ds=selection::evaluate(&x,&selection::build_active(&Log::genesis(1).unwrap()).unwrap()).unwrap();
+ assert!(ds.iter().any(|d|matches!(d,Decision::Select{at:4,..})));
+ assert_eq!(1u64<<24,16_777_216);assert_eq!((1u64<<24)>>1,8_388_608); // age 0 / age 3 at tau 2
+}
+
+#[test]
+fn edge_activation_is_fixed_single_and_has_l1_provenance(){
+ let mut x=edge_log();append(&mut x,3,vec![("edges",Value::Str("[{\"dst_key\":\"B\",\"dst_kind\":\"letter\",\"rel\":\"link\",\"src_key\":\"A\",\"src_kind\":\"letter\"}]".into()))]);
+ let before=x.to_jsonl();let active=selection::build_active(&x).unwrap();assert_eq!(before,x.to_jsonl());
+ let _=selection::evaluate(&x,&active).unwrap();
+ assert_eq!(1u64<<24,16_777_216); // fixed weight 1.0
+}
+
+#[test]
+fn budget_zero_ties_and_only_current_candidates(){
+ let mut x=Log::genesis(1).unwrap();config(&mut x,0,0,1);nodes(&mut x,1,&["A","B"]);
+ let ds=selection::evaluate(&x,&selection::build_active(&Log::genesis(1).unwrap()).unwrap()).unwrap();
+ assert!(ds.iter().any(|d|matches!(d,Decision::Select{downs,..} if downs.len()==2)));
+ let mut y=Log::genesis(1).unwrap();config(&mut y,0,1,1);nodes(&mut y,1,&["A"]);nodes(&mut y,2,&["B"]);
+ let d=selection::evaluate(&y,&selection::build_active(&Log::genesis(1).unwrap()).unwrap()).unwrap();assert!(d.iter().any(|x|matches!(x,Decision::Select{at:2,..})));
+}
+
+#[test]
+fn config_replacement_and_l2_21_schema_rules(){
+ let mut x=Log::genesis(1).unwrap();config(&mut x,0,1,1);config(&mut x,1,2,3);
+ let mut bad=Log::genesis(1).unwrap();l2(&mut bad,0,"config",vec![("k",Value::Int(1)),("tau",Value::Int(1)),("typo",Value::Int(0))]);assert_eq!(selection::build_active(&bad).unwrap_err(),L2Error::Schema);
+ let mut bad=Log::genesis(1).unwrap();l2(&mut bad,0,"oops",vec![]);assert_eq!(selection::build_active(&bad).unwrap_err(),L2Error::Schema);
+ let mut bad=Log::genesis(1).unwrap();l2(&mut bad,0,"config",vec![("k",Value::Int(1))]);assert_eq!(selection::build_active(&bad).unwrap_err(),L2Error::Config);
+}
+
+#[test]
+fn barriers_close_errors_and_summary_order_and_content(){
+ let mut x=Log::genesis(1).unwrap();config(&mut x,0,1,1);l2(&mut x,0,"barrier",vec![]);nodes(&mut x,1,&["A","B"]);
+ l2(&mut x,2,"barrier",vec![("phase",Value::Str("close".into()))]);
+ let b=selection::build_active(&x).unwrap();let ds=selection::evaluate(&x,&b).unwrap();assert!(ds.is_empty());
+ let mut bad=Log::genesis(1).unwrap();l2(&mut bad,0,"barrier",vec![("phase",Value::Str("close".into()))]);assert_eq!(selection::build_active(&bad).unwrap_err(),L2Error::Barrier);
+ let mut bad=Log::genesis(1).unwrap();l2(&mut bad,0,"barrier",vec![("phase",Value::Str("later".into()))]);assert_eq!(selection::build_active(&bad).unwrap_err(),L2Error::Barrier);
+}
+
+#[test]
+fn replay_is_deterministic_and_read_only_and_noncanonical_arrays_fail(){
+ let mut x=Log::genesis(1).unwrap();config(&mut x,0,2,2);nodes(&mut x,1,&["A"]);
+ let original=x.to_jsonl();let a=selection::build_active(&x).unwrap();let b=selection::build_active(&x).unwrap();assert_eq!(a,b);let _=selection::evaluate(&x,&a).unwrap();assert_eq!(original,x.to_jsonl());
+ let mut bad=Log::genesis(1).unwrap();config(&mut bad,0,1,1);append(&mut bad,1,vec![("nodes",Value::Str("[ {\"key\":\"A\",\"kind\":\"letter\"}]".into()))]);assert_eq!(selection::build_active(&bad).unwrap_err(),L2Error::Schema);
 }
