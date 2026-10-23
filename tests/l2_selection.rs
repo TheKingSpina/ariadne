@@ -90,3 +90,45 @@ fn replay_is_deterministic_and_read_only_and_noncanonical_arrays_fail(){
  let original=x.to_jsonl();let a=selection::build_active(&x).unwrap();let b=selection::build_active(&x).unwrap();assert_eq!(a,b);let _=selection::evaluate(&x,&a).unwrap();assert_eq!(original,x.to_jsonl());
  let mut bad=Log::genesis(1).unwrap();config(&mut bad,0,1,1);append(&mut bad,1,vec![("nodes",Value::Str("[ {\"key\":\"A\",\"kind\":\"letter\"}]".into()))]);assert_eq!(selection::build_active(&bad).unwrap_err(),L2Error::Schema);
 }
+
+#[test]
+fn evaluate_uses_only_events_after_the_latest_existing_l2_event() {
+ let mut x=Log::genesis(1).unwrap(); config(&mut x,0,2,1); nodes(&mut x,1,&["A"]);
+ l2(&mut x,2,"select",vec![("at",Value::Int(3)),("ups",Value::Str("[]".into())),("downs",Value::Str("[]".into()))]);
+ let base=selection::build_active(&x).unwrap();
+ nodes(&mut x,3,&["B"]);
+ let ds=selection::evaluate(&x,&base).unwrap();
+ assert!(ds.iter().all(|d|matches!(d,Decision::Select{at:5,..})));
+ assert_eq!(ds.len(),1);
+}
+
+#[test]
+fn evaluate_does_not_reemit_summary_before_base() {
+ let mut x=Log::genesis(1).unwrap(); config(&mut x,0,2,1);
+ l2(&mut x,1,"summary",vec![("expulsions",Value::Str("[]".into())),("text",Value::Str(String::new()))]);
+ let base=selection::build_active(&x).unwrap(); nodes(&mut x,2,&["A"]);
+ let ds=selection::evaluate(&x,&base).unwrap();
+ assert!(!ds.iter().any(|d|matches!(d,Decision::Summary{..})));
+}
+
+#[test]
+fn closing_barrier_emits_provenance_summary_before_selection() {
+ let mut x=Log::genesis(1).unwrap(); config(&mut x,0,1,1);
+ let base=selection::build_active(&x).unwrap();
+ l2(&mut x,1,"barrier",vec![]); nodes(&mut x,2,&["A","B"]);
+ nodes(&mut x,3,&["C"]);
+ l2(&mut x,4,"barrier",vec![("phase",Value::Str("close".into()))]);
+ let ds=selection::evaluate(&x,&base).unwrap();
+ let summary=ds.iter().position(|d|matches!(d,Decision::Summary{..})).unwrap();
+ let select=ds.iter().position(|d|matches!(d,Decision::Select{at:5,..})).unwrap();
+ assert!(summary<select);
+ let Decision::Summary{expulsions,text}=&ds[summary] else {panic!()};
+ assert_eq!(expulsions, &{let mut v=expulsions.clone();v.sort_unstable();v.dedup();v});
+ let mut ids:Vec<String>=view_ids(&x,expulsions);
+ ids.sort(); assert_eq!(*text,ids.join("|"));
+}
+
+fn view_ids(log:&Log, origins:&[u64])->Vec<String>{
+ let view=ariadne::view::build(log).unwrap();
+ view.nodes.iter().filter(|n|origins.contains(&n.origin_seq)).map(|n|n.id.clone()).collect()
+}
