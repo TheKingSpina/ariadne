@@ -22,6 +22,7 @@ mod event;
 mod log;
 mod payload;
 pub mod prng;
+pub mod selection;
 pub mod state;
 pub mod view;
 
