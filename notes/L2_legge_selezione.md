@@ -148,3 +148,23 @@ essi sono autorevoli (L2.11/L2.14) e si considerano solo gli eventi successivi
 all'ultimo di essi. Un `build_active` a fine log equivale a `log_len` = totale
 eventi. Il check di L2.12 restaredicate: `head_hash` del log al termine
 dell'ultimo evento consumato deve coincidere con `log.events()[base.log_len−1].hash`.
+
+**L2.23 — Cutoff e eventi di controllo (24/10/2026, 12ª domanda).**
+Gli eventi `l2="barrier"` e `l2="config"` sono eventi di **controllo**: non
+sono decisioni e non partecipano al cutoff delle decisioni. Il cutoff usa
+l'ultimo evento `l2` **decisionale** (`select` o `summary`) nel log: le
+decisioni nuove riguardano solo gli eventi di valutazione con seq
+successiva a quell'evento. Il summary della finestra è emesso al momento
+della chiusura (L2.15), prima dell'eventuale `Select` generato dallo
+stesso evento di chiusura quando l'evento di chiusura contiene estrazioni
+(caso non-l2); se l'evento di chiusura è `phase="close"` (controllo),
+nessun `Select` gli corrisponde. Le valutazioni continuano dentro una
+finestra aperta: ogni evento non-`l2` con estrazioni produce la sua
+decisione select.
+
+**L2.24 — Parità completa (24/10/2026, 13ª domanda).**
+Se punteggi uguali e origin_seq uguali (es. più elementi menzionati
+nello stesso evento con k insufficiente), l'ordine è determinato
+dall'id: **resta/entra** l'elemento con id L1 lessicograficamente
+minore; l'altro è espulso. La regola generalizza il tie-break di L2.6 e
+L2.17 quando anche la seq di origine coincide.
