@@ -189,3 +189,17 @@ La finestra offline contiene SOLO eventi `l2`. Dentro una finestra aperta:
 - le valutazioni NON continuano dentro una finestra aperta: la clausola
   di L2.23 «Le valutazioni continuano dentro una finestra aperta» è ABROGATA
   da questa L2.25.
+
+**L2.26 — Identità degli espulsi quando origin_seq si ripete (24/10/2026,
+15ª domanda).** `select` porta `ups`/`downs` come array di origin_seq
+(L2.10, invariato). Se una medesima origin_seq in `downs`/`ups`
+corrisponde a più elementi L1 con lo stesso origin_seq nello stesso
+evento, l'identità esatta (id) che il Summary riporta in `text` è
+dedotta dal replay applicando lo **stesso ordine di decisione della
+legge** (L2.6 → L2.17 → L2.24) allo stato attivo immediatamente
+precedente all'evento select: sono espulsi, in ordine, gli elementi che
+il tie-break segnala finché il conteggio dei downs per quella origin_seq
+è soddisfatto. `expulsions` resta array di origin_seq (L2.16); `text`
+riporta gli id così dedotti, dedup, ordine lessicografico asc, separati
+da `|`. La deduzione è deterministica e non muta `build_active`: il set
+attivo resta autorevole dai select (L2.11).
