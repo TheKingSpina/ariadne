@@ -168,3 +168,24 @@ nello stesso evento con k insufficiente), l'ordine è determinato
 dall'id: **resta/entra** l'elemento con id L1 lessicograficamente
 minore; l'altro è espulso. La regola generalizza il tie-break di L2.6 e
 L2.17 quando anche la seq di origine coincide.
+
+**L2.25 — Semantica della finestra offline (24/10/2026, 14ª domanda,
+risoluzione della contraddizione L2.8/L2.23).**
+La finestra offline contiene SOLO eventi `l2`. Dentro una finestra aperta:
+- sono ammessi solo eventi `l2` (`select`, `summary` di windowprecedente,
+  `barrier`) e **nessun** evento L0 non-l2;
+- il primo evento non-`l2` dopo l'apertura chiude la finestra **ed è
+  allo stesso tempo evento di valutazione**: emette il `Summary` della
+  finestra (se ha expulsions) e POI il proprio `Select`, se genera
+  transizioni (L2.15/L2.19);
+- le `expulsions` del Summary della finestra sono le espanosioni
+  **accumulate dai `Select` già apposti nella finestra** (eventi l2 che
+  il chiamante ha scritto tra l'apertura e la chiusura, autorevoli per
+  L2.11/M2.14); le espanoions generate dalla valutazione dell'evento di
+  chiusura NON stanno in quel Summary: appaiono nel `Select` dello stesso
+  evento di chiusura;
+- `phase="close"` chiude la finestra nello stesso evento (L2.19), senza
+  selezioni corrispondenti se è puro controllo;
+- le valutazioni NON continuano dentro una finestra aperta: la clausola
+  di L2.23 «Le valutazioni continuano dentro una finestra aperta» è ABROGATA
+  da questa L2.25.
