@@ -187,8 +187,9 @@ La finestra offline contiene SOLO eventi `l2`. Dentro una finestra aperta:
 - `phase="close"` chiude la finestra nello stesso evento (L2.19), senza
   selezioni corrispondenti se è puro controllo;
 - le valutazioni NON continuano dentro una finestra aperta: la clausola
-  di L2.23 «Le valutazioni continuano dentro una finestra aperta» è ABROGATA
-  da questa L2.25.
+  «Le valutazioni continuano dentro una finestra aperta» di L2.23 è
+  **depennata qui** (abrogata da L2.25, commit `716e971`): dentro la finestra
+  restano solo eventi `l2`.
 
 **L2.26 — Identità degli espulsi quando origin_seq si ripete (24/10/2026,
 15ª domanda).** `select` porta `ups`/`downs` come array di origin_seq
