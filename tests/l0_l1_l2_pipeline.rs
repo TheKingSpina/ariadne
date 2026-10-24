@@ -15,7 +15,7 @@ fn nodes(keys: &[&str]) -> Value {
 fn l0_l1_l2_pipeline_is_replayable_and_provenanced() {
     let mut log = Log::genesis(41).unwrap();
     l2(&mut log, 0, "config", vec![("k", Value::Int(1)), ("tau", Value::Int(1))]);
-    append(&mut log, 1, vec![("nodes", nodes(&["A", "B"])), ("edges", Value::Str("[{\"dst_key\":\"B\",\"dst_kind\":\"letter\",\"rel\":\"rel\",\"src_key\":\"A\",\"src_kind\":\"letter\"}]".into()))]);
+    append(&mut log, 1, vec![("nodes", nodes(&["A", "B", "C"])), ("edges", Value::Str("[{\"dst_key\":\"C\",\"dst_kind\":\"letter\",\"rel\":\"rel\",\"src_key\":\"A\",\"src_kind\":\"letter\"}]".into()))]);
     let base = selection::build_active(&log).unwrap();
     let before = log.to_jsonl();
     let v = view::build(&log).unwrap();
@@ -23,22 +23,24 @@ fn l0_l1_l2_pipeline_is_replayable_and_provenanced() {
     assert_eq!(v.head_hash, log.events().last().unwrap().hash);
     let a = v.nodes.iter().find(|n| n.key == "A").unwrap();
     let b = v.nodes.iter().find(|n| n.key == "B").unwrap();
-    assert_eq!((a.origin_seq, b.origin_seq), (2, 2));
+    let c = v.nodes.iter().find(|n| n.key == "C").unwrap();
+    assert_eq!((a.origin_seq, b.origin_seq, c.origin_seq), (2, 2, 2));
     assert_eq!(v.edges.len(), 1);
     assert_eq!(v.edges[0].origin_seq, 2);
 
     l2(&mut log, 3, "barrier", vec![]);
-    append(&mut log, 4, vec![("nodes", nodes(&["D"]))]);
-    append(&mut log, 5, vec![("nodes", nodes(&["E"])), ("edges", Value::Str("[{\"dst_key\":\"B\",\"dst_kind\":\"letter\",\"rel\":\"cycle\",\"src_key\":\"E\",\"src_kind\":\"letter\"}]".into()))]);
+    let window_select = Decision::Select { at: 2, tick: 1, ups: vec![], downs: vec![2] };
+    append(&mut log, 3, selection::encode(&window_select));
+    append(&mut log, 4, vec![("nodes", nodes(&["D"])), ("edges", Value::Str("[{\"dst_key\":\"A\",\"dst_kind\":\"letter\",\"rel\":\"cycle\",\"src_key\":\"D\",\"src_kind\":\"letter\"}]".into()))]);
+    let before_eval = log.to_jsonl();
     let decisions = selection::evaluate(&log, &base).unwrap();
     let summary_at = decisions.iter().position(|d| matches!(d, Decision::Summary { .. })).unwrap();
     let close_select_at = decisions.iter().position(|d| matches!(d, Decision::Select { at: 5, .. })).unwrap();
     assert!(summary_at < close_select_at);
-    let serialized = log.to_jsonl();
+    assert!(matches!(&decisions[summary_at], Decision::Summary { expulsions, .. } if expulsions == &vec![2]));
     let again = selection::evaluate(&log, &base).unwrap();
     assert_eq!(decisions, again);
-    assert_eq!(serialized, log.to_jsonl());
-    for d in &decisions { append(&mut log, 4, selection::encode(d)); }
+    assert_eq!(before_eval, log.to_jsonl());
     log.verify().unwrap();
     let active_a = selection::build_active(&log).unwrap();
     let active_b = selection::build_active(&log).unwrap();

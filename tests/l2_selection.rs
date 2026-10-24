@@ -1,6 +1,7 @@
 use ariadne::{selection::{self, Decision, L2Error}, EventType, Log, Payload, Value};
 
-fn append(log: &mut Log, tick: u64, pairs: Vec<(&str, Value)>) {
+fn append<K: AsRef<str>>(log: &mut Log, tick: u64, pairs: Vec<(K, Value)>) {
+    let pairs: Vec<(String, Value)> = pairs.into_iter().map(|(k, v)| (k.as_ref().to_owned(), v)).collect();
     log.append(tick, EventType::Action, Payload::from_pairs(pairs)).unwrap();
 }
 fn l2(log: &mut Log, tick: u64, tag: &str, rest: Vec<(&str, Value)>) {
@@ -77,11 +78,19 @@ fn config_replacement_and_l2_21_schema_rules(){
 
 #[test]
 fn barriers_close_errors_and_summary_order_and_content(){
- let mut x=Log::genesis(1).unwrap();config(&mut x,0,1,1);l2(&mut x,0,"barrier",vec![]);nodes(&mut x,1,&["A","B"]);
- l2(&mut x,2,"barrier",vec![("phase",Value::Str("close".into()))]);
+ let mut x=Log::genesis(1).unwrap();config(&mut x,0,1,1);nodes(&mut x,1,&["A"]);l2(&mut x,2,"barrier",vec![]);
+ // L2.25: solo eventi l2 possono stare nella finestra; downs autorevoli del select.
+ l2(&mut x,3,"select",vec![("at",Value::Int(2)),("ups",Value::Str("[]".into())),("downs",Value::Str("[2]".into()))]);
+ l2(&mut x,4,"barrier",vec![("phase",Value::Str("close".into()))]);
  assert!(selection::build_active(&x).is_ok());
  let mut bad=Log::genesis(1).unwrap();l2(&mut bad,0,"barrier",vec![("phase",Value::Str("close".into()))]);assert_eq!(selection::build_active(&bad).unwrap_err(),L2Error::Barrier);
- let mut bad=Log::genesis(1).unwrap();l2(&mut bad,0,"barrier",vec![("phase",Value::Str("later".into()))]);assert_eq!(selection::build_active(&bad).unwrap_err(),L2Error::Barrier);
+ let mut bad=Log::genesis(1).unwrap();l2(&mut bad,0,"barrier",vec![]);l2(&mut bad,1,"barrier",vec![]);assert_eq!(selection::build_active(&bad).unwrap_err(),L2Error::Barrier);
+ let mut y=Log::genesis(1).unwrap();config(&mut y,0,1,1);nodes(&mut y,1,&["A"]);let base=selection::build_active(&y).unwrap();
+ l2(&mut y,2,"barrier",vec![]);l2(&mut y,3,"select",vec![("at",Value::Int(2)),("ups",Value::Str("[]".into())),("downs",Value::Str("[2]".into()))]);nodes(&mut y,4,&["B"]);
+ let ds=selection::evaluate(&y,&base).unwrap();
+ // L2.25: Summary accumulated from in-window select precedes the closing event's Select.
+ assert!(matches!(ds.first(),Some(Decision::Summary{expulsions,..}) if expulsions==&vec![2]));
+ assert!(matches!(ds.get(1),Some(Decision::Select{at:5,..})));
 }
 
 #[test]
@@ -113,20 +122,19 @@ fn evaluate_does_not_reemit_summary_before_base() {
 
 #[test]
 fn closing_barrier_emits_provenance_summary_before_selection() {
- let mut x=Log::genesis(1).unwrap(); config(&mut x,0,1,1);
+ let mut x=Log::genesis(1).unwrap();config(&mut x,0,1,1);nodes(&mut x,1,&["A"]);
  let base=selection::build_active(&x).unwrap();
- l2(&mut x,1,"barrier",vec![]); nodes(&mut x,2,&["A","B"]);
- nodes(&mut x,3,&["C"]);
- l2(&mut x,4,"barrier",vec![("phase",Value::Str("close".into()))]);
+ l2(&mut x,2,"barrier",vec![]);
+ // L2.25: caller appends authoritative in-window select; its downs feed the summary.
+ let authored=Decision::Select{at:2,tick:1,ups:vec![],downs:vec![2]};
+ append(&mut x,1,selection::encode(&authored));
+ nodes(&mut x,3,&["B"]); // primo non-l2 chiude e viene anche valutato
  let ds=selection::evaluate(&x,&base).unwrap();
- let summary=ds.iter().position(|d|matches!(d,Decision::Summary{..})).unwrap();
- assert_eq!(ds.iter().filter(|d|matches!(d,Decision::Select{..})).count(),2);
- assert!(ds.iter().position(|d|matches!(d,Decision::Select{at:3,..})).unwrap()<summary);
- assert!(ds.iter().position(|d|matches!(d,Decision::Select{at:4,..})).unwrap()<summary);
- let Decision::Summary{expulsions,text}=&ds[summary] else {panic!()};
- assert_eq!(expulsions, &[3]);
- let mut ids:Vec<String>=view_ids(&x,expulsions);
- ids.sort(); assert_eq!(*text,ids.join("|"));
+ assert!(matches!(ds.first(),Some(Decision::Summary{expulsions,..}) if expulsions==&vec![2]));
+ assert!(matches!(ds.get(1),Some(Decision::Select{at:5,..})));
+ let Decision::Summary{text,..}=&ds[0] else {panic!()};
+ let expected=view_ids(&x,&[2]); let mut expected=expected; expected.sort();
+ assert_eq!(text,&expected.join("|"));
 }
 
 #[test]
@@ -137,14 +145,15 @@ fn equal_score_eviction_prefers_newer_origin_then_greater_id() {
  let ds=selection::evaluate(&x,&selection::build_active(&base).unwrap()).unwrap();
  assert!(ds.iter().any(|d|matches!(d,Decision::Select{at:3,downs,..} if downs==&vec![3])));
 
- // Same origin seq: the close summary identifies the expelled L1 id.
- let mut y=Log::genesis(1).unwrap(); let base=y.clone(); config(&mut y,0,1,1);
- l2(&mut y,1,"barrier",vec![]); nodes(&mut y,2,&["A","B"]);
- l2(&mut y,3,"barrier",vec![("phase",Value::Str("close".into()))]);
- let ds=selection::evaluate(&y,&selection::build_active(&base).unwrap()).unwrap();
+ // Same origin seq: L2.26 derives the expunged id by the L2.24 order.
+ let mut y=Log::genesis(1).unwrap(); config(&mut y,0,2,1); nodes(&mut y,1,&["A","B"]);
+ let base=selection::build_active(&y).unwrap(); l2(&mut y,2,"barrier",vec![]);
+ l2(&mut y,3,"select",vec![("at",Value::Int(2)),("ups",Value::Str("[]".into())),("downs",Value::Str("[2]".into()))]);
+ l2(&mut y,4,"barrier",vec![("phase",Value::Str("close".into()))]);
+ let ds=selection::evaluate(&y,&base).unwrap();
  let Decision::Summary{text,..}=ds.iter().find(|d|matches!(d,Decision::Summary{..})).unwrap() else {panic!()};
  let view=ariadne::view::build(&y).unwrap();
- let greater=view.nodes.iter().filter(|n|n.origin_seq==3).map(|n|n.id.clone()).max().unwrap();
+  let greater=view.nodes.iter().filter(|n|n.origin_seq==2).map(|n|n.id.clone()).max().unwrap();
  assert_eq!(text,&greater);
 }
 
