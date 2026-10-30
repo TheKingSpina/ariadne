@@ -119,7 +119,7 @@ circuito (recall); altri passi o ripetizioni → `L3Error::Transition`
 Proiezione canonica (documenta `build_memory`):
 
 ```
-{"archive_hash":"…","archived_at? entries":[…],"head_hash":"…","schema_version":"1"}
+{"archive_hash":"…","entries":[…],"head_hash":"…","schema_version":"1"}
 ```
 
 membri in ordine lessicografico; `head_hash` = hash dell'ultimo evento
@@ -142,9 +142,16 @@ non partecipa al cutoff (pattern L2.23). Coerenza di prefisso su
 **L3.10 — API di `src/memory.rs`** (pattern L2.20; attuazione e formati
 esatti in accordo ad questa legge):
 
-- `pub struct MemoryView { config: Option<(i64,i64)>, entries: Vec<Entry>, log_len: usize, head_hash: String }`
+- `pub struct MemoryView { archive_hash: String, config: Option<(i64,i64)>, entries: Vec<Entry>, log_len: usize, head_hash: String }`
   dove `Entry { id: String, origin_seq: u64, status: Status,
   archived_at_seq: Option<u64> }` e `pub enum Status { Circuit, Long, Archived }`;
+  `archive_hash` è calcolato da `build_memory` con la regola di L3.8
+  (SHA-256 minuscolo del documento canonico escluso il proprio campo);
+- `pub fn canonical(view: &MemoryView) -> String` — serializzazione
+  canonica del documento L3.8, membri in ordine lessicografico, nessuno
+  spazio: è testo sagefa di riprodotto byte per byte; `archive_hash` di
+  `view` è la SHA-256 del preimage, cioè dello stesso testo prodotto da
+  `canonical` privo del campo `archive_hash` (come `view_hash` in L1/D16);
 - `pub enum L3Error { Config, Schema, HeadMatch, Recall, Transition }`;
 - `pub fn build_memory(log: &Log) -> Result<MemoryView, L3Error>` —
   replay autorevole a fine log (L3.8), check `head_hash` (L3.9);
