@@ -39,10 +39,14 @@ e non muta alcuna decisione L2.
 riattivazioni) e `H` (`i64 ≥ 1`, half-life del decadimento in tick
 logici). Vale dalla propria seq in poi, per il conteggio e per il
 decadimento; un config successivo supersede il precedente a partire dalla
-propria seq (pattern L2.2). La geni L0 resta **invariata** (payload
+propria seq (pattern L2.2). La genesi L0 resta **invariata** (payload
 sigillato `{prng,seed,state}`, L0 §4): T ed H vivono nell'evento config,
 non nella genesi. Valutare senza config o con config malformata →
-`L3Error::Config`; niente default impliciti.
+`L3Error::Config`; niente default impliciti. **Anche il replay** richiede
+la config: `build_memory` su un log privo di evento `l3="config"` valido
+→ `L3Error::Config` — non esiste punto L3 senza configurazione ( decisione
+del 30/10/2026, che risolve la contraddizione segnalata dal producer tra
+dispatch e test `a337652`; il test, scritto per primo, fa legge).
 
 **L3.3 — Conteggio delle riattivazioni Q2.** Per identità: il conteggio è
 il numero di **eventi L0 distinti** che l'hanno attivata per L2.3/L2.13
