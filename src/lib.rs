@@ -20,6 +20,7 @@
 pub mod cycle;
 mod event;
 mod log;
+pub mod memory;
 mod payload;
 pub mod prng;
 pub mod selection;
