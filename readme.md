@@ -13,14 +13,11 @@ Ariadne è un'architettura cognitiva a livelli costruita attorno a un'unica veri
 - **L6 Meta** — l'agente rilegge il proprio log e ricalibra i livelli sotto.
 
 **Stato**
-- L0_SPEC v0.2 freezata: schema evento, catena di hash, correzione compensativa, criteri d'uscita.
-- Le SPEC di tutti i livelli stanno in `spec/`, una per file: `spec/L<n>_SPEC_v<versione>.md`.
-- **`spec/L0_SPEC_v0.3.md` firmato** (addendum alla v0.2, prevale in caso di divergenza):
-  compensativo autodescrittivo, seeding canonico splitmix64 + PCG64, parser severo
-  sull'intera riga.
-- **L0 implementato**: log append-only, replay bit-perfetto a due processi, 80 test
-  verdi (debug e release). Audit del reviewer a `a02b66a`: nessuna violazione nota.
-- Prossimo passo: accettazione di L0 da parte dell'umano, poi L1.
+- **L0 Substrato — accettato** (22/10/2026, `a02b66a`): replay bit-perfetto a due processi, 80 test verdi debug+release, audit del reviewer senza violazioni note (chiuso con la firma di `spec/L0_SPEC_v0.3.md`).
+- **L1 Vista — accettato** (23/10/2026): test-first `c8c69d7` → implementazione `87bc9e9`; 11 test L1 / 91 totali; addendum F1 firmato (`d082209`): `nodes`/`edges` come chiavi stringa con array JSON canonico interno.
+- **L2 Selezione — accettato** (24/10/2026, con pipeline di integrazione L0→L1→L2): legge L2.1–L2.26 (`notes/L2_legge_selezione.md`), 105 test totali verdi (14 L2), gate tester e mini-audit reviewer conformi. Eventi L2 = `ACTION` con payload `l2 = config | select | summary | barrier`; set attivo a budget k, salienza intera `2^24 >> …`, finestra offline con Summary autorevole.
+- **Legge attuale in federa consolidata** (26/10/2026, `f92bde3`): la lettura canonica di ciascun livello implementato è un solo file — `spec/L0_SPEC_v0.4.md`, `spec/L1_SPEC_v0.3.md`, `spec/L2_SPEC_v0.3.md`. Le versioni precedenti e le note di legge restano reperti storici.
+- **Prossimo passo**: L3 Memoria lunga (triage della SPEC, poi ciclo test-first consolidato).
 
 **Stack e deploy**
 - **Linguaggio L0**: Rust — fold deterministica, SHA-256, no-GC per latenza prevedibile e borrow checker contro l'undefined behavior.
