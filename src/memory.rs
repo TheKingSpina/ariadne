@@ -6,7 +6,7 @@ pub struct Entry { pub id: String, pub origin_seq: u64, pub status: Status, pub 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Status { Circuit, Long, Archived }
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct MemoryView { pub config: Option<(i64,i64)>, pub entries: Vec<Entry>, pub log_len: usize, pub head_hash: String }
+pub struct MemoryView { pub archive_hash: String, pub config: Option<(i64,i64)>, pub entries: Vec<Entry>, pub log_len: usize, pub head_hash: String }
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum L3Error { Config, Schema, HeadMatch, Recall, Transition }
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -20,3 +20,5 @@ pub fn evaluate(_log:&Log,_base:&MemoryView)->Result<Vec<Decision3>,L3Error>{Ok(
 pub fn encode(_d:&Decision3)->Vec<(String,Value)>{vec![]}
 // TODO L3: stub test-only
 pub fn encode_recall(_at:u64,_origin_seq:u64,_id:String)->Vec<(String,Value)>{vec![]}
+// TODO L3: stub test-only
+pub fn canonical(_view:&MemoryView)->String{String::new()}
