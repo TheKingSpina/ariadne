@@ -72,6 +72,72 @@ fn l3_7_recall_sequela_and_transition_errors() {
     assert!(matches!(err,L3Error::Recall|L3Error::Transition));
 }
 
+// [L3.7] L3.7: una sequela è un'attivazione L2 post-archivio; un archive valido
+// non rende valido il RECALL di un'attivazione precedente o di un'altra identità.
+#[test]
+fn l3_7b_recall_without_sequela_with_valid_archive() {
+    let mut log = Log::genesis(1042).unwrap();
+    nodes(&mut log, 0, &["A"]);
+    l3_config(&mut log, 0, 0, 1);
+    let view = ariadne::view::build(&log).unwrap();
+    let a = view.nodes.iter().find(|n| n.key == "A").unwrap().clone();
+    nodes(&mut log, 25, &["B"]);
+    let evaluation_seq = log.events().last().unwrap().seq;
+    action(
+        &mut log,
+        25,
+        "archive",
+        vec![
+            ("at", Value::Int(evaluation_seq as i64)),
+            ("id", Value::Str(a.id.clone())),
+            ("origin_seq", Value::Int(a.origin_seq as i64)),
+        ],
+    );
+    let archived = memory::build_memory(&log).expect("L3.6: archive ancorato a una valutazione valida");
+    let entry = archived.entries.iter().find(|e| e.id == a.id).unwrap();
+    assert_eq!(entry.status, Status::Archived);
+    let archived_at = entry.archived_at_seq.unwrap();
+
+    // Caso at attivante ma non successivo all'archiviazione: deve essere Recall.
+    let mut old_sequela = log.clone();
+    action(
+        &mut old_sequela,
+        25,
+        "recall",
+        vec![
+            ("at", Value::Int(1)),
+            ("id", Value::Str(a.id.clone())),
+            ("origin_seq", Value::Int(a.origin_seq as i64)),
+        ],
+    );
+    assert_eq!(
+        memory::build_memory(&old_sequela).unwrap_err(),
+        L3Error::Recall,
+        "L3.7: recall without sequela must be Recall, not Transition"
+    );
+
+    // Caso at successivo all'archive ma riferito a un evento che non attiva A.
+    let mut unrelated = log;
+    nodes(&mut unrelated, 26, &["C"]);
+    let unrelated_seq = unrelated.events().last().unwrap().seq;
+    assert!(unrelated_seq > archived_at);
+    action(
+        &mut unrelated,
+        26,
+        "recall",
+        vec![
+            ("at", Value::Int(unrelated_seq as i64)),
+            ("id", Value::Str(a.id)),
+            ("origin_seq", Value::Int(a.origin_seq as i64)),
+        ],
+    );
+    assert_eq!(
+        memory::build_memory(&unrelated).unwrap_err(),
+        L3Error::Recall,
+        "L3.7: recall without sequela must be Recall, not Transition"
+    );
+}
+
 // [L3.9] L3.9: only evaluations beyond the latest decision count toward the cutoff;
 // config is control-only and must not reset the decision cutoff.
 #[test]
