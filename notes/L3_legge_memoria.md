@@ -54,7 +54,13 @@ il numero di **eventi L0 distinti** che l'hanno attivata per L2.3/L2.13
 seq), contati dall'intera storia del log. Persistente: **mai azzerato**
 da ARCHIVE, RECALL o da qualunque transizione — la memoria non muore per
 decreto, solo per oblio calcolato. La promozione richiede **soglia
-stretta**: conteggio `> T`.
+stretta**: conteggio `> T`. **Tracciamento (emendamento E2, firmato
+dall'umano 31/10/2026):** un'identità entra in traccia alla sua prima
+attivazione nel replay e resta tracciata; al giudizio t sono soggette a
+decisioni soltanto le identità in traccia con almeno una attivazione
+con `seq ≤ t` — un'identità mai attivata oltre il giudizio è **fuori
+traccia**: niente oblio, niente promozione, nulla la riguarda, quale che
+sia la storia successiva del log.
 
 **L3.4 — Decadimento Q3 (metà del punto).** Punteggio di decadimento
 dell'identità al giudizio:
@@ -105,8 +111,14 @@ Vincoli verificati in replay autorevole, violare uno è `L3Error::Recall`:
 (b) `at` esiste ed è un evento L0 con estrazioni che attiva l'identità
 per L2.3/L2.13;
 (c) **sequela**: `at.seq > archived_at_seq` dell'ultima archiviazione,
-ed è distinto dall'evento recall stesso (sempre vero: `at` è nel log
-precedente). RECALL senza sequela è **vietato**: niente ritorni dalle
+ed è distinto dall'evento recall stesso, e appartiene al **log
+precedente** all'evento recall: `at.seq` < seq dell'evento recall; un
+`at` che si riferisce all'evento recall stesso o a un'attivazione
+successiva a esso è `L3Error::Recall` (emendamento E1, firmato
+dall'umano 31/10/2026: la legge affermava già «sempre vero: `at` è nel
+log precedente», l'audit del 30/10 ha dimostrato che doveva essere un
+vincolo controllato, non un'ovvietà). RECALL senza sequela è **vietato**:
+niente ritorni dalle
 tombe senza sequela. Il richiamo riporta lo stato a `circuito`;
 l'**origin_seq L1 originale è conservato** (nessuna nuova origine).
 Re-richiamo di un'in-circuito o in-memoria-lunga → `L3Error::Transition`.
@@ -180,3 +192,6 @@ esatti in accordo ad questa legge):
   legge trascrive quella firma)
 - [x] **orchestratore** — 30 ottobre 2026 (trascrizione del pacchetto in
   legge; niente requisiti oltre le decisioni umane e i pattern L0–L2)
+- [x] **umano** — 31 ottobre 2026 (emendamenti E1 e E2, radicati negli
+  articoli L3.7 e L3.3: firmati dopo l'audit del 30/10 che li ha
+  individuati come carenze legislative; firmatari: «perfetto, firmo»)
