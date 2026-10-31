@@ -104,7 +104,11 @@ fn appose_revision(
     sources: &[u64],
     prior_members: &[String],
 ) -> String {
-    let srcs: String = sources.iter().map(u64::to_string).collect::<Vec<_>>().join(",");
+    // forma F1: stringa con JSON canonico interno (L4.1/L4.6), es. "[1]"
+    let srcs: String = format!(
+        "[{}]",
+        sources.iter().map(u64::to_string).collect::<Vec<_>>().join(",")
+    );
     log.append(tick, EventType::Action, narrate_pairs(at, text, &srcs))
         .unwrap();
     let narrate_hash = log.events().last().unwrap().hash.clone();
@@ -192,9 +196,9 @@ fn l4_check2_i_irrelevant_difference_produces_identical_narrated_statements() {
         ),
     )])).unwrap(); // seq 4: prime dichiarazione dell'arco (rilevante)
     members.push(appose_revision(
-        &mut a, 5, 2,
-        "a seq 2 ho dichiarato l'arco knows da letter \"A\" a letter \"B\"",
-        &[2], &members,
+        &mut a, 5, 4,
+        "a seq 4 ho dichiarato l'arco knows da letter \"A\" a letter \"B\"",
+        &[4], &members,
     )); // seq 5–6
 
     // log B = A + UN evento non rilevante in più (nessuna estrazione, senza l4)
@@ -209,7 +213,7 @@ fn l4_check2_i_irrelevant_difference_produces_identical_narrated_statements() {
     let sb: String = db.statements.iter().map(statement_member).collect::<Vec<_>>().join(",");
     assert_eq!(sa, sb, "divergenza scoped (i): eventi irrilevanti → narrazione identica");
     assert_eq!(db.statements.len(), 2);
-    assert_eq!(da.statements[1].text, "a seq 2 ho dichiarato l'arco knows da letter \"A\" a letter \"B\"");
+    assert_eq!(da.statements[1].text, "a seq 4 ho dichiarato l'arco knows da letter \"A\" a letter \"B\"");
     // la catena propaga: head_hash (e il documento intero) differiscono
     assert_ne!(da.head_hash, db.head_hash, "L4.4: head_hash = hash dell'ultimo evento");
     assert_ne!(da.self_hash, db.self_hash, "l'ancora copre head_hash: i due log sono distinti");
@@ -223,7 +227,7 @@ fn l4_check2_ii_relevant_difference_produces_divergent_narrated_statements() {
     let mk = |key: &str, text: &str| -> Log {
         let mut log = Log::genesis(1042).unwrap();
         log.append(5, EventType::Action, Payload::from_pairs([
-            ("nodes", Value::Str(format!("{{\"key\":\"{key}\",\"kind\":\"letter\"}}"))),
+            ("nodes", Value::Str(format!("[{{\"key\":\"{key}\",\"kind\":\"letter\"}}]"))),
         ])).unwrap();
         appose_revision(&mut log, 5, 1, text, &[1], &[]);
         log
@@ -281,9 +285,9 @@ fn l4_check3_all_templates_exact_texts_internal_order_sources_and_join() {
 
     let d = evaluate_self(&log, &base).unwrap();
     assert_eq!(d.len(), 12, "6 eventi rilevanti → 6 revisioni × (Narrate, Snapshot)");
-    for w in d.windows(2) {
-        assert!(matches!(&w[1], Decision4::Snapshot { .. }), "per revisione prima Narrate poi Snapshot");
-        match (&w[0], &w[1]) {
+    for pair in d.chunks(2) {
+        assert!(matches!(&pair[1], Decision4::Snapshot { .. }), "per revisione prima Narrate poi Snapshot");
+        match (&pair[0], &pair[1]) {
             (Decision4::Narrate { at: a1, tick: t1, .. }, Decision4::Snapshot { at: a2, tick: t2, .. })
                 if a1 == a2 && t1 == t2 => {}
             _ => panic!("Snapshot: at e tick identici al narrate"),
@@ -330,7 +334,7 @@ fn l4_check3_select_list_rendering_sorted_dedup_and_empty() {
         selection::encode(&Decision::Select { at: 1, tick: 5, ups: vec![3, 1, 3], downs: vec![2, 2] }),
     )).unwrap(); // seq 2
     let d = evaluate_self(&log, &base).unwrap();
-    match &d[0] {
+    match &d[2] {
         Decision4::Narrate { text, sources, .. } => {
             assert_eq!(text, "a seq 2 ho selezionato: entrate [1,3], uscite [2]");
             assert_eq!(sources, &[1, 2, 3], "bibliografia: seq citate nel template, dedup crescente");
@@ -420,9 +424,9 @@ fn l4_check4_replay_rebuilds_document_and_snapshots_verified() {
     let m2 = appose_revision(&mut log, 5, 2, &t2, &[2], &[m1.clone()]); // seq 5–6
 
     // le coppie apposte portano GLI STESSI self_hash delle decisioni
-    let snap1 = log.events()[3].payload.get("self_hash").unwrap();
+    let snap1 = log.events()[4].payload.get("self_hash").unwrap();
     assert_eq!(snap1, &Value::Str(h1), "L4.6 simulazione ↔ L4.7 apposizione");
-    let snap2 = log.events()[5].payload.get("self_hash").unwrap();
+    let snap2 = log.events()[6].payload.get("self_hash").unwrap();
     assert_eq!(snap2, &Value::Str(h2));
 
     // replay: documento ricostruito, snapshot verificati
@@ -435,8 +439,8 @@ fn l4_check4_replay_rebuilds_document_and_snapshots_verified() {
 
     // cutoff: il prefisso narrato produce nulla (L4.6,L4.8)
     let base_prefix = SelfBase {
-        head_hash: log.events()[3].hash.clone(),
-        log_len: 4,
+        head_hash: log.events()[4].hash.clone(),
+        log_len: 5,
     };
     assert!(evaluate_self(&log, &base_prefix).unwrap().is_empty());
 }
@@ -673,7 +677,7 @@ fn l4_check5_cutoff_tail_only_and_prefix_coherence() {
     )])).unwrap(); // seq 4
 
     // base sul prefisso: decisioni solo per la coda (seq 4)
-    let base = SelfBase { head_hash: head_after, log_len: log.events().len() - 1 };
+    let base = SelfBase { head_hash: head_after.clone(), log_len: log.events().len() - 1 };
     let d = evaluate_self(&log, &base).unwrap();
     assert_eq!(d.len(), 2);
     match &d[0] {
@@ -767,14 +771,14 @@ fn l4_check7_determinism_two_evaluations_identical() {
 #[test]
 fn l4_check8_l4_apis_do_not_advance_prng_state() {
     let mut log = Log::genesis(1042).unwrap();
-    let state_before = match log.events().last().unwrap().payload.get("state") {
+    let state_before = match log.events()[0].payload.get("state") {
         Some(Value::Str(s)) => s.clone(),
         _ => panic!("payload genesi"),
     };
     node_a_then_b(&mut log);
     let _ = build_self(&log).unwrap();
     let _ = evaluate_self(&log, &base_full(&log)).unwrap();
-    let state_after = match log.events().last().unwrap().payload.get("state") {
+    let state_after = match log.events()[0].payload.get("state") {
         Some(Value::Str(s)) => s.clone(),
         _ => panic!("payload genesi"),
     };

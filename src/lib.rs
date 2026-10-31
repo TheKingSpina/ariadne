@@ -19,6 +19,7 @@
 
 pub mod cycle;
 mod event;
+pub mod identity;
 mod log;
 pub mod memory;
 mod payload;
