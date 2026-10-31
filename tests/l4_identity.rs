@@ -638,6 +638,23 @@ fn l4_check4_state_with_l4_is_schema() {
     assert_eq!(build_self(&log).unwrap_err(), SelfError::Schema);
 }
 
+// [rilievo audit L4 / L4.2+L4.1] un evento non-ACTION (SENSE) con chiavi
+// l2/l3 nel payload è payload decisionale malformato: la validazione a
+// campi limitati vale per OGNI evento che il piano L4 legge, a prescindere
+// dal tipo L0 → Schema ANCHE nel replay di build_self (stessa esito di
+// evaluate_self, nessuna divergenza fra le due API).
+#[test]
+fn l4_check4_replay_non_action_with_l2_or_l3_is_schema() {
+    let mut log = Log::genesis(1042).unwrap();
+    log.append(3, EventType::Sense, Payload::from_pairs([
+        ("l2", Value::Str("select".into())),
+        ("at", Value::Int(0)),
+        ("ups", Value::Str("[0]".into())),
+        ("downs", Value::Str("[]".into())),
+    ])).unwrap();
+    assert_eq!(build_self(&log).unwrap_err(), SelfError::Schema);
+}
+
 // [L4.3(d)/L4.7] errore dentro un evento letto da L4: id L3 non conforme
 // (non hex minuscolo a 64) → Schema.
 #[test]
