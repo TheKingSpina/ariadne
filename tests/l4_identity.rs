@@ -655,6 +655,22 @@ fn l4_check4_replay_non_action_with_l2_or_l3_is_schema() {
     assert_eq!(build_self(&log).unwrap_err(), SelfError::Schema);
 }
 
+// [copertura re-audit L4 / rilievo informativo (a)] diretta del ramo `l3`:
+// evento non-ACTION (SENSE) con chiavi l3 nel payload → Schema ANCHE nel
+// replay di build_self (specchio l2 del test a riga 647; chiavi L3 valide).
+#[test]
+fn l4_check4_replay_non_action_with_l3_is_schema() {
+    let mut log = Log::genesis(1042).unwrap();
+    log.append(3, EventType::Sense, Payload::from_pairs([
+        ("l3", Value::Str("promote".into())),
+        ("origin_seq", Value::Int(0)),
+        ("id", Value::Str(
+            sha256_hex(&("{\"key\":\"A\",\"kind\":\"letter\"}".to_string())),
+        )),
+    ])).unwrap();
+    assert_eq!(build_self(&log).unwrap_err(), SelfError::Schema);
+}
+
 // [L4.3(d)/L4.7] errore dentro un evento letto da L4: id L3 non conforme
 // (non hex minuscolo a 64) → Schema.
 #[test]
