@@ -533,6 +533,49 @@ fn l5_check7_second_predict_replaces_anchor() {
     });
 }
 
+// [copertura decima mandato / rilievo residuo re-audit R1-ter,
+// `reports/audit_l5_impl.md` append] SIMMETRIA fra le DUE API sul medesimo
+// log patologico (pattern di patch L4): un evento ACTION con chiave `l5` di
+// valore NON-stringa o fuori dominio `predict|model_update` dev'essere
+// `SocialError::Schema` da ENTRAMBE `evaluate_social` e `build_social`
+// (L5.1: `l5` è discriminante stringa a dominio chiuso; L5.2: rigidità del
+// canone). SMENTITA del rilievo: il difetto segnalato (salto silenzioso del
+// cammino a src/social.rs:580) NON è riproducibile — `replay_upto` valida la
+// chiave `l5` (str_field :416 + match dominio :417 + non-ACTION :408) PRIMA
+// del cammino, chiamata in coda a evaluate_social (social.rs:561–562) e
+// sempre per l'intero log. Test VERDE alla stesura: è COPERTURA del ramo
+// già in vigore, NON test-first (pattern coperture: 0f01211 L3, 8d82f47 L4).
+#[test]
+fn l5_check5_l5_key_pathologies_symmetric_schema() {
+    // caso (i): `l5` = `Value::Int` (non-stringa)
+    let mut log = Log::genesis(1042).unwrap();
+    log.append(1, EventType::Action, Payload::from_pairs([
+        ("l5", Value::Int(7)),
+    ])).unwrap();
+    let base = base_full(&log);
+    assert_eq!(evaluate_social(&log, &base).unwrap_err(), SocialError::Schema);
+    assert_eq!(build_social(&log).unwrap_err(), SocialError::Schema);
+
+    // caso (ii): `l5` = stringa fuori dominio (`"foo"`)
+    let mut log = Log::genesis(1042).unwrap();
+    log.append(1, EventType::Action, Payload::from_pairs([
+        ("l5", Value::Str("foo".into())),
+    ])).unwrap();
+    let base = base_full(&log);
+    assert_eq!(evaluate_social(&log, &base).unwrap_err(), SocialError::Schema);
+    assert_eq!(build_social(&log).unwrap_err(), SocialError::Schema);
+
+    // caso (iii): la stessa infrazione su un SENSE (non-ACTION) e su uno
+    // STATE: uniformità a prescindere dal tipo L0 (canale l5 vive solo su ACTION)
+    let mut log = Log::genesis(1042).unwrap();
+    log.append(1, EventType::Sense, Payload::from_pairs([
+        ("l5", Value::Int(7)),
+    ])).unwrap();
+    let base = base_full(&log);
+    assert_eq!(evaluate_social(&log, &base).unwrap_err(), SocialError::Schema);
+    assert_eq!(build_social(&log).unwrap_err(), SocialError::Schema);
+}
+
 // ---------------------------------------------------------------------------
 // checklist 7 — cutoff L5.4 e interazioni
 // ---------------------------------------------------------------------------
