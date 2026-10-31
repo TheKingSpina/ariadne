@@ -368,6 +368,48 @@ fn l5_check6_malformed_osservazioni_is_schema() {
     assert_eq!(build_social(&log).unwrap_err(), SocialError::Schema);
 }
 
+// [checklist 6 / L5.2 — rilievo R1 audit, `reports/audit_l5_impl.md`]
+// la chiave `osservazioni` su SENSE dev'essere una STRINGA F1 canonica:
+// valore NON-`Value::Str` (tipo errato) o stringa NON-F1 (JSON abbreviato /
+// top-level sbagliato / spazi fuori canone) → `SocialError::Schema` — forma
+// malformata (L5.2, righe 59–70), canone byte-per-byte L1/L2, specchio
+// `src/selection.rs:47` e `src/identity.rs:283`.
+#[test]
+fn l5_check_osservazioni_non_f1_is_schema() {
+    // valore NON-stringa: `Value::Int` — prima della patch veniva accettato
+    // SILENZIOSAMENTE (R1): il test è ROSSO in commit 1 e VERDE dopo il fix.
+    let mut log = Log::genesis(1042).unwrap();
+    log.append(1, EventType::Sense, Payload::from_pairs([
+        ("osservazioni", Value::Int(5)),
+    ])).unwrap();
+    assert_eq!(build_social(&log).unwrap_err(), SocialError::Schema);
+    // evaluate_social rifiuta la STESSA forma (patch replicata su entrambi
+    // i luoghi del modulo, social.rs:385 e :583)
+    let base = base_full(&log);
+    assert_eq!(evaluate_social(&log, &base).unwrap_err(), SocialError::Schema);
+
+    // stringa NON-F1: array JSON abbreviato di stringhe (manca l'oggetto membro)
+    let mut log = Log::genesis(1042).unwrap();
+    log.append(1, EventType::Sense, Payload::from_pairs([
+        ("osservazioni", Value::Str("[\"bob\"]".into())),
+    ])).unwrap();
+    assert_eq!(build_social(&log).unwrap_err(), SocialError::Schema);
+
+    // stringa NON-F1: oggetto top-level (manca l'array)
+    let mut log = Log::genesis(1042).unwrap();
+    log.append(1, EventType::Sense, Payload::from_pairs([
+        ("osservazioni", Value::Str("{\"altro\":\"bob\"}".into())),
+    ])).unwrap();
+    assert_eq!(build_social(&log).unwrap_err(), SocialError::Schema);
+
+    // stringa F1 con SPACES: canone STRICT byte-per-byte (già L1/L2)
+    let mut log = Log::genesis(1042).unwrap();
+    log.append(1, EventType::Sense, Payload::from_pairs([
+        ("osservazioni", Value::Str("[ {\"altro\":\"bob\",\"comportamento\":1} ]".into())),
+    ])).unwrap();
+    assert_eq!(build_social(&log).unwrap_err(), SocialError::Schema);
+}
+
 // [checklist 6 / L5.2] la chiave `osservazioni` su un evento NON-SENSE →
 // Schema (specchio della regola di patch L4: la chiave vive solo nel canale
 // percettivo, mai sugli altri eventi).
@@ -409,6 +451,8 @@ fn l5_check6_l5_mixed_with_other_tags_is_schema() {
     assert_eq!(build_social(&log).unwrap_err(), SocialError::Schema);
 }
 
+// [checklist 6 / L5.10] base incoerente → HeadMatch (identico pattern L4.8).
+#[test]
 // [checklist 6 / L5.10] base incoerente → HeadMatch (identico pattern L4.8).
 #[test]
 fn l5_check6_base_incoerente_is_head_match() {
