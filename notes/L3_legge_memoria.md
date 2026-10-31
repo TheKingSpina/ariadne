@@ -88,6 +88,14 @@ soglia `= 0`: identità con `score == 0` è in oblio.
 alla seq di origine della decisione, pattern L2.18), `id` (hex),
 `origin_seq` (`i64`: origine L1 dell'identità, se L1 la conosce). Il tick
 dell'evento di valutazione è il tick dell'evento apposto.
+**Emendamento E3 (firmato dall'umano 31/10/2026):** tra L3.5 e L3.8
+**vince L3.8**: un `Promote` su identità con stato `archiviata` è
+**violazione** (`L3Error::Transition`), non una decisione valida — la
+lettura letterale «stato ≠ `memoria_lunga`» non si applica all'archiviata.
+Solo RECALL (L3.7) riporta un'identità archiviata al circuito; la
+promozione resta possibile soltanto dallo stato `circuito`. L'audit
+compatto del 31/10/2026 su `b2770bd` (R3) ha individuato la tensione;
+l'implementazione vigente segue già L3.8, l'emendamento ne fa legge.
 
 **L3.6 — ARCHIVE Q3/Q4.** Al giudizio, per identità con stato ≠
 `archiviata` e `score == 0`: decisione `Archive` con lo stesso payload di
@@ -195,3 +203,7 @@ esatti in accordo ad questa legge):
 - [x] **umano** — 31 ottobre 2026 (emendamenti E1 e E2, radicati negli
   articoli L3.7 e L3.3: firmati dopo l'audit del 30/10 che li ha
   individuati come carenze legislative; firmatari: «perfetto, firmo»)
+- [x] **umano** — 31 ottobre 2026 (emendamento E3, radicato in L3.5: firma
+  «lo emendo prima di L4 dichiarando che vince L3.8 — Promote su
+  archiviata è violazione, solo RECALL riabilita»; d'audit compatta
+  L0–L3 su `b2770bd`, rilievo R3)
