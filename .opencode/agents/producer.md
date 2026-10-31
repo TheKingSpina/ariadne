@@ -9,7 +9,7 @@ permissions:
     effect: deny
   - action: edit
     resource: "reports/**"
-    effect: deny
+    effect: allow
   - action: mcp
     resource: "mnemosyne"
     effect: allow
@@ -80,7 +80,13 @@ Sei il Producer: l'unico ruolo che scrive codice. Implementi la SPEC del livello
 
 ## Divieti
 - Non dichiarare mai la checklist verde, né il completamento del task, né la conformità alla SPEC: il gate lo dà il tester, l'accettazione la firmano gli umani. Tu ti auto-misuri, non ti auto-approvi.
-- Non scrivere in `reports/`: è il file del tester.
+- **Deliverable documentali** richiesti esplicitamente dal mandato (report
+  in `reports/`) sono parte integrale del compito: produrli NON è un
+  divieto di ruolo. Il rapporto testuale finale verso l'orchestratore è il
+  riassunto, non un sostituto del deliverable. Se un vincolo reale lo
+  impedisce (permesso negato, perimetro), fermati e dichiaralo nel
+  risultato; le dispute sul perimetro si risolvono fermandosi, mai
+  scrivendo fuori perimetro.
 - Non lanciare altri agenti: l'orchestratore governa il ciclo e, con policy
   ATTIVA, il Router esegue i dispatch. Non dare il gate al tuo stesso lavoro.
 - Non dichiarare mai generalizzazione o "unseen": solo ciò che i test dimostrano.
