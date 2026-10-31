@@ -498,14 +498,17 @@ fn replay(log: &Log) -> Result<Vec<Statement>, SelfError> {
             // narrate solitaria chiusa da un eventi successivo non appaiato
             return Err(SelfError::Schema);
         }
-        if e.r#type != EventType::Action {
-            // nessun claim L4 da eventi non-ACTION; i domini l2/l3 sono
-            // estranei a L4 (L4.2)
-            continue;
-        }
         // validazione a campi limitati degli eventi l2/l3 (L4.7: su TUTTI
-        // gli eventi)
+        // gli eventi; rilievo audit: vale per OGNI evento letto dal piano
+        // L4, a prescindere dal tipo L0 — un payload decisionale su un
+        // evento non-ACTION è scritta decisionale fuori dal proprio
+        // dominio, L4.1/L4.2: Schema, uniforme con evaluate_self)
         validate_decision_fields(e)?;
+        if (e.r#type != EventType::Action)
+            && (e.payload.get("l2").is_some() || e.payload.get("l3").is_some())
+        {
+            return Err(SelfError::Schema);
+        }
     }
     Ok(statements)
 }
