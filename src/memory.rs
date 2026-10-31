@@ -91,6 +91,7 @@ fn replay(log:&Log)->Result<(Option<(i64,i64)>,BTreeMap<String,Entry>,BTreeMap<S
                 exact(e,&["at","id","origin_seq"])?;
                 let at=u64::try_from(intv(e,"at")?).map_err(|_|L3Error::Schema)?;
                 if tag!="recall" && !log.events().iter().take(e.seq as usize).any(|prior|prior.seq==at&&(prior.payload.get("nodes").is_some()||prior.payload.get("edges").is_some())) {return Err(L3Error::Transition)}
+                if tag=="recall" && at>=e.seq {return Err(L3Error::Recall)}
                 let id=strv(e,"id")?.to_string();
                 if id.len()!=64||!id.bytes().all(|b|b.is_ascii_digit()||(b'a'..=b'f').contains(&b)){return Err(L3Error::Schema)}
                 let origin=u64::try_from(intv(e,"origin_seq")?).map_err(|_|L3Error::Schema)?;
@@ -115,7 +116,7 @@ fn replay(log:&Log)->Result<(Option<(i64,i64)>,BTreeMap<String,Entry>,BTreeMap<S
 }
 fn without_archive_hash(view:&MemoryView)->String{
     let mut s=String::from("{\"entries\":[");
-    for (i,e) in view.entries.iter().enumerate(){if i>0{s.push(',')}s.push_str("{\"id\":");write_escaped(&mut s,&e.id);s.push_str(",\"origin_seq\":");s.push_str(&e.origin_seq.to_string());s.push_str(",\"status\":");write_escaped(&mut s,status_text(e.status));if let Some(seq)=e.archived_at_seq{s.push_str(",\"archived_at_seq\":");s.push_str(&seq.to_string())}s.push('}')}
+    for (i,e) in view.entries.iter().enumerate(){if i>0{s.push(',')}s.push('{');let mut first=true;if let Some(seq)=e.archived_at_seq{s.push_str("\"archived_at_seq\":");s.push_str(&seq.to_string());first=false}if !first{s.push(',')}s.push_str("\"id\":");write_escaped(&mut s,&e.id);s.push_str(",\"origin_seq\":");s.push_str(&e.origin_seq.to_string());s.push_str(",\"status\":");write_escaped(&mut s,status_text(e.status));s.push('}')}
     s.push_str("],\"head_hash\":");write_escaped(&mut s,&view.head_hash);s.push_str(",\"schema_version\":\"1\"}");s
 }
 fn status_text(s:Status)->&'static str{match s{Status::Circuit=>"circuito",Status::Long=>"memoria_lunga",Status::Archived=>"archiviata"}}
@@ -141,7 +142,7 @@ pub fn evaluate(log:&Log,base:&MemoryView)->Result<Vec<Decision3>,L3Error>{
     for e in log.events().iter().filter(|e|e.seq>decision_cutoff&&events.contains_key(&e.seq)){
         let mut config_at=None;for prior in log.events().iter().take(e.seq as usize+1){if matches!(prior.payload.get("l3"),Some(Value::Str(x))if x=="config"){config_at=Some(parse_config(prior)?);}}
         let(t,h)=config_at.ok_or(L3Error::Config)?;
-        let mut archives:Vec<String>=entries.iter().filter(|(id,x)|x.status!=Status::Archived&&score(id,e.seq,e.tick,h,&acts)==0).map(|(id,_)|id.clone()).collect();
+        let mut archives:Vec<String>=entries.iter().filter(|(id,x)|x.status!=Status::Archived&&acts.get(*id).is_some_and(|xs|xs.iter().any(|(seq,_)|*seq<=e.seq))&&score(id,e.seq,e.tick,h,&acts)==0).map(|(id,_)|id.clone()).collect();
         archives.sort_by(|a,b|entries[b].origin_seq.cmp(&entries[a].origin_seq).then_with(||b.cmp(a)));
         let mut promotes:Vec<String>=entries.iter().filter(|(id,x)|x.status==Status::Circuit&&acts.get(*id).map_or(0,|a|a.iter().filter(|(s,_)|*s<=e.seq).count())>t as usize).map(|(id,_)|id.clone()).collect();
         promotes.sort_by(|a,b|entries[a].origin_seq.cmp(&entries[b].origin_seq).then_with(||a.cmp(b)));
