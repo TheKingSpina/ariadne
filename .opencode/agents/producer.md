@@ -1,7 +1,10 @@
 ---
 description: Producer — implementa le SPEC di Ariadne in Rust scrivendo codice e test per il livello assegnato, senza mai modificare specifiche né log.
 mode: all
-model: openai/gpt-6-luna#medium
+model: openai/gpt-6.1-terra
+# Fallback di Problema (31/10/2026, autorizzato dall'umano): se questo
+# modello non carica o non risponde, subentra openai/gpt-6-luna#medium;
+# la subentrata è l'unica ammessa e va dichiarata nel report.
 steps: 40
 permissions:
   - action: subagent

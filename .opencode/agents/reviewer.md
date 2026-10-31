@@ -2,6 +2,9 @@
 description: Reviewer — esegue l'audit finale del codice contro la SPEC di Ariadne in sola lettura, citando file e riga per ogni riscontro.
 mode: all
 model: opencode/nemotron-3.5-super-vl-free
+# Fallback di Problema (31/10/2026, autorizzato dall'umano): se questo
+# modello non carica o non risponde, subentra openai/gpt-6-luna#medium;
+# la subentrata è l'unica ammessa e va dichiarata nel report.
 steps: 35
 permissions:
   - action: edit
@@ -62,4 +65,7 @@ Sei il Reviewer: l'audit finale contro la SPEC, solo dopo checklist tester verde
 - **Non hai autorità di governance**: non chiamare `memory_review_decision` o `memory_review_arc`. Le decisioni spettano all'orchestratore per delega; tu riporti l'audit, non approvi.
 - **Alla fine**: `memory_close_session(sessionId)`.
 - **Nel report, in testa**: la riga `modello: <provider/model[#variant]>` che il dispatch ti comunica, e l'elenco degli id delle memorie esaminate. Se non ne hai esaminata nessuna, scrivilo: una memoria mai richiamata è decorazione.
-- Usa esclusivamente il modello pinnato in questo file. Nessun override o cambio provider; se il dispatch non parte con il pin, segnala il blocco senza sostituirlo.
+- Usa esclusivamente il modello pinnato in questo file. Se il dispatch non
+  parte con il pin (stallo, modello non raggiungibile), subentra la sola
+  `openai/gpt-6-luna#medium` e dichiaralo in testa al report; nessun altro
+  override o cambio provider.

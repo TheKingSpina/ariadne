@@ -2,6 +2,9 @@
 description: Orchestratore — coordina producer, tester e reviewer sui livelli di Ariadne, rilayando i risultati testualmente senza mai scrivere codice né giudicare l'accettazione.
 mode: primary
 model: opencode/glm-5.3-flash-free#high
+# Fallback di Problema (31/10/2026, autorizzato dall'umano): se questo
+# modello non carica o non risponde, subentra openai/gpt-6-luna#medium;
+# la subentrata è l'unica ammessa e va dichiarata nel report.
 steps: 20
 permissions:
   - action: edit

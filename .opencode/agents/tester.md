@@ -2,6 +2,9 @@
 description: Tester — verifica indipendentemente l'implementazione contro la SPEC di Ariadne eseguendo i test, senza mai scrivere o correggere codice di produzione.
 mode: all
 model: nvidia/nvidia/nemotron-3-ultra-550b-a55b
+# Fallback di Problema (31/10/2026, autorizzato dall'umano): se questo
+# modello non carica o non risponde, subentra openai/gpt-6-luna#medium;
+# la subentrata è l'unica ammessa e va dichiarata nel report.
 steps: 45
 permissions:
   - action: edit
