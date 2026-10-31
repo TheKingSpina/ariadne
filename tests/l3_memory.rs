@@ -1,4 +1,5 @@
 use ariadne::{memory::{self, Decision3, L3Error, Status}, EventType, Log, Payload, Value};
+use sha2::{Digest, Sha256};
 
 fn action(log:&mut Log,tick:u64,tag:&str,fields:Vec<(&str,Value)>) {
     let mut pairs=vec![("l3",Value::Str(tag.into()))]; pairs.extend(fields);
@@ -16,6 +17,87 @@ fn nodes(log:&mut Log,tick:u64,keys:&[&str]) {
 }
 fn l3_config(log:&mut Log,tick:u64,t:i64,h:i64) {
     action(log,tick,"config",vec![("T",Value::Int(t)),("H",Value::Int(h))]);
+}
+
+fn valid_archived_a() -> (Log, String, u64) {
+    let mut log = Log::genesis(1042).unwrap();
+    nodes(&mut log, 0, &["A"]);
+    l3_config(&mut log, 0, 0, 1);
+    let view = ariadne::view::build(&log).unwrap();
+    let a = view.nodes.iter().find(|n| n.key == "A").unwrap().clone();
+    nodes(&mut log, 25, &["B"]);
+    let at = log.events().last().unwrap().seq;
+    action(&mut log, 25, "archive", vec![
+        ("at", Value::Int(at as i64)),
+        ("id", Value::Str(a.id.clone())),
+        ("origin_seq", Value::Int(a.origin_seq as i64)),
+    ]);
+    (log, a.id, a.origin_seq)
+}
+
+// [E2] L3.3 (emendamento E2): solo identità già attivate al seq del giudizio
+// sono in traccia e possono ricevere decisioni a quel giudizio.
+#[test]
+fn l3_e2_future_identity_is_not_archived_before_first_activation() {
+    let mut log = Log::genesis(1042).unwrap();
+    l2_config(&mut log, 0, 8, 1);
+    l3_config(&mut log, 0, 0, 1);
+    nodes(&mut log, 1, &["A"]);
+    let base = memory::build_memory(&log).unwrap();
+    nodes(&mut log, 26, &["C"]); // valutazione prima della prima attivazione di X
+    let x_activation_seq = log.events().last().unwrap().seq + 1;
+    nodes(&mut log, 27, &["X"]);
+    let full_view = ariadne::view::build(&log).unwrap();
+    let x_id = full_view.nodes.iter().find(|n| n.key == "X").unwrap().id.clone();
+    let decisions = memory::evaluate(&log, &base).unwrap();
+    assert!(decisions.iter().all(|d| match d {
+        Decision3::Archive { at, id, .. } | Decision3::Promote { at, id, .. } if id == &x_id => *at >= x_activation_seq,
+        _ => true,
+    }), "L3.3 E2: future identity must not receive decisions before its first activation");
+    assert!(decisions.iter().any(|d| matches!(d, Decision3::Promote { at, id, .. } if id == &x_id && *at >= x_activation_seq)));
+}
+
+// [E1] L3.7c (emendamento E1): la sequela deve precedere l'evento RECALL;
+// un at futuro già presente nel log completo è comunque Recall, non successo.
+#[test]
+fn l3_e1_recall_cannot_reference_future_activation() {
+    let (mut log, id, origin_seq) = valid_archived_a();
+    let recall_seq = log.events().last().unwrap().seq + 1;
+    let future_activation_seq = recall_seq + 1;
+    action(&mut log, 26, "recall", vec![
+        ("at", Value::Int(future_activation_seq as i64)),
+        ("id", Value::Str(id.clone())),
+        ("origin_seq", Value::Int(origin_seq as i64)),
+    ]);
+    nodes(&mut log, 27, &["A"]);
+    assert_eq!(memory::build_memory(&log).unwrap_err(), L3Error::Recall,
+        "L3.7c E1: future sequela must be Recall");
+}
+
+// [L3.8] L3.8/L3.10: archive_hash è SHA-256 del documento canonico senza
+// il membro archive_hash, inclusa la voce archiviata byte per byte.
+#[test]
+fn l3_8_digest_matches_canonical_archived_document_preimage() {
+    let (log, _, _) = valid_archived_a();
+    let view = memory::build_memory(&log).unwrap();
+    let document = memory::canonical(&view);
+    let prefix = format!("{{\"archive_hash\":\"{}\",", view.archive_hash);
+    let rest = document.strip_prefix(&prefix).expect("archive_hash è primo membro canonico");
+    let preimage = format!("{{{rest}");
+    let hex: String = Sha256::digest(preimage.as_bytes()).iter().map(|b| format!("{b:02x}")).collect();
+    assert_eq!(hex, view.archive_hash, "L3.8: archive_hash must hash canonical document minus its own field");
+}
+
+// [L3.6] L3.6: un'identità già archiviata non genera un'altra decisione Archive
+// finché non interviene RECALL; il cutoff resta ancorato all'archive autorevole.
+#[test]
+fn l3_6_archive_in_log_is_not_reemitted() {
+    let (mut log, id, _) = valid_archived_a();
+    let base = memory::build_memory(&log).unwrap();
+    nodes(&mut log, 26, &["A"]);
+    let decisions = memory::evaluate(&log, &base).unwrap();
+    assert!(decisions.iter().all(|d| !matches!(d, Decision3::Archive { id: archived, .. } if archived == &id)),
+        "L3.6: archived identity must not be archived again before recall");
 }
 
 // [L3.3] L3.3: conteggia eventi L0 distinti, deduplica le menzioni nello stesso evento,
