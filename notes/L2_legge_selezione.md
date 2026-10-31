@@ -204,3 +204,35 @@ il tie-break segnala finché il conteggio dei downs per quella origin_seq
 riporta gli id così dedotti, dedup, ordine lessicografico asc, separati
 da `|`. La deduzione è deterministica e non muta `build_active`: il set
 attivo resta autorevole dai select (L2.11).
+
+---
+
+**L2.27 — Riprova dell'arco (31 ottobre 2026; firmato dall'umano:
+«Lettura A — L2.3/L2.13»).** Risoluzione della contraddizione fra L2.5 e
+L2.3/L2.13 emersa dal fix di audit R1 (`src/selection.rs:41`, ciclo
+compatto L0–L3 su `b2770bd`): **vince L2.3/L2.13**. Ogni evento L0 con
+estrazioni che dichiara un arco (dichiarazione originale o riprova,
+reiterata quante volte si vuole) attiva gli endpoint di **quell'evento**
+(a seq dell'evento), una sola attivazione per elemento per seq (dedup
+dentro lo stesso evento, già L2.13): una dichiarazione successiva dello
+stesso arco è quindi anch'essa una menzione e si attiva come tale.
+Chiarimenti conseguenti:
+- in L2.5, «contributo dell'arco = un'attivazione al tick dell'evento
+  che ha dichiarato l'arco» vale **per ogni evento che dichiara
+  l'arco**; la parentesi «(seq di dichiarazione minimo, D18 L1)» è
+  regola di **identità/origin della vista L1** (L1 D18: arco unico per
+  `(src_id,dst_id,rel)` con origin_seq = seq minimo), NON una regola di
+  attivazione;
+- «senza doppio ricalcolo per riprova» significa: **nessuna**
+  attivazione deduplicata o raddoppiata **dentro lo stesso evento**
+  (L2.13), e nessun ricalcolo aggregato dalla vista; NON soppressione
+  delle attivazioni derivanti da dichiarazioni ripetute in eventi
+  successivi;
+- coerente con la legge L3.3 (contaggio = «eventi L0 distinti che
+  l'hanno attivata per L2.3/L2.13») e con l'implementazione L3
+  accettata in `src/memory.rs` (per-evento, senza esenzioni di
+  riprova), re-audit CONFORME del 31/10/2026.
+Prova esecutiva: il test multi-arco (`distinct_edge_events_
+activate_only_their_own_endpoints`) e il test di riprova reiterata
+dello stesso arco che accompagna il fix R1 fissano questa semantica;
+nessuno dei due può regredire senza violare questa legge.
