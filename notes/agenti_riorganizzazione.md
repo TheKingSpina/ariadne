@@ -11,6 +11,40 @@ non si sa mai)». Prima delle modifiche è stato creato e verificato il backup
 `/Users/spina/Ariadne-agent-backups/pre-routing-20261031-195101`:
 13 file, manifest SHA-256, snapshot del working tree e baseline Git `a1d88eb`.
 
+### Provvedimento pendente di firma — pattern «divieto di ruolo» (BOZZA,
+### diagnosi corretta dopo l'audit del frontmatter)
+
+Emergenza del 31/10/2026 (due cicli): il producer ha rifiutato due volte di
+produrre un report esplicitamente richiesto dal mandato
+(`reports/fix_l2_r1_r2_2a9e18e.md`, poi `reports/l4_impl_identita.md`),
+adducendo un «divieto di ruolo». Verifica del frontmatter
+(`.opencode/agents/producer.md:10-12`): il permesso `edit reports/**`
+effettivamente NEGATO — il «divieto» reale è a livello configurazione, non
+un'invenzione del figlio. Nel secondo ciclo l'harness ha anche bloccato la
+scrittura (`permission rejected` ×2). Contenuto del report del producer è
+stato trascritto dall'orchestratore senza ulteriori consumi.
+
+**Bozza di correzione per `.opencode/agents/producer.md`** (da applicare SOLO
+con firma umana; due opzioni,_MUTUAMENTE esclusive):
+
+> **Opzione 1 (modifica permesso):** sostituire
+> `edit reports/**: deny` con `edit reports/**: allow` e aggiungere al
+> prompt: «I deliverable documentali richiesti esplicitamente dal mandato
+> (report in `reports/`) sono parte integrale del compito, NON un divieto;
+> il rapporto testuale finale è riassunto, non sostituto del deliverable.
+> Le dispute sul perimetro si risolvono fermandosi, mai scrivendo fuori
+> perimetro.»
+>
+> **Opzione 2 (invariato):** mantenere il deny e codificare che il report
+> del producer è consegnato al Router nel testo finale DEL su contenuto
+> integrale di trascrizione (l'orchestratore lo trascrive in `reports/`
+> senza ulteriori consumi di modelli); il prompt riceve solo la frase
+> «deliverable richiesti si consegnano al Router nel resoconto finale».
+
+Stato: proposta pronta, NON applicata, non committata. La firma umana decide
+opzioni 1 o 2 (e in seconda battuta la stessa regola si estendere a
+tester/reviewer in analoga forma).
+
 - Orchestratore GLM → Router MiMo; rimossi i permessi di dispatch diretto
   producer/tester/reviewer dall'orchestratore.
 - Rimossi i tre pin operativi: il Router passa un modello esplicito per

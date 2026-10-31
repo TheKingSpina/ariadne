@@ -168,6 +168,14 @@ l4: "narrate";  at: i64; text: String; sources: "[i64,…]" (stringa JSON canoni
 l4: "snapshot"; at: i64; self_hash: String
 ```
 
+**Precisazione su `sources` (firmata dall'orchestratore, 31/10/2026,
+sotto delega):** `sources` della revisione = l'unione, dedup, in ordine
+crescente delle seq CITATE nei template delle affermazioni della
+revisione: la seq dell'evento che genera ciascuna affermazione più le
+seq originarie che compaiono nei rimpiazzi `{ups}`, `{downs}`,
+`{expulsions}`, `{origin}`. Il `{seq}` del template dà l'ancora;
+la bibliografia raccoglie tutte le citazioni di seq della revisione.
+
 Nessuna append diretta: l'append resta al chiamante via API L0
 (L2.20/L3.10). Eventi non rilevanti e di controllo: nessuna decisione.
 
