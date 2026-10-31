@@ -381,8 +381,15 @@ fn replay_upto(log: &Log, up_to: usize) -> Result<Replay, SocialError> {
         if e.payload.get("osservazioni").is_some() && e.r#type != EventType::Sense {
             return Err(SocialError::Schema);
         }
-        // [L5.2] `osservazioni` è SOLO stringa con array F1 canonico.
-        if let Some(Value::Str(raw)) = e.payload.get("osservazioni") {
+        // [L5.2] `osservazioni` è SOLO stringa con array F1 canonico:
+        // chiave presente con valore NON-stringa → Schema (patch R1,
+        // rilievo audit_l5_impl; specchi selection.rs:47, identity.rs:283).
+        if let Some(value) = e.payload.get("osservazioni") {
+            let raw = match value {
+                Value::Str(raw) => raw.as_str(),
+                // [patch R1 / L5.2] forma malformata: NON-stringa → Schema
+                _ => return Err(SocialError::Schema),
+            };
             let members = parse_osservazioni(raw)?;
             if !members.is_empty() {
                 // il gruppo della stessa SENSE concorre in ordine di membro;
@@ -580,7 +587,14 @@ pub fn evaluate_social(log: &Log, base: &SocialBase) -> Result<Vec<Decision5>, S
                 }
             }
         }
-        if let Some(Value::Str(raw)) = e.payload.get("osservazioni") {
+        // [L5.2 patch R1] `osservazioni`: stessa validazione di replay_upto —
+        // chiave presente con valore NON-stringa F1 → Schema (rilievo R1,
+        // audit_l5_impl; specchi selection.rs:47, identity.rs:283).
+        if let Some(value) = e.payload.get("osservazioni") {
+            let raw = match value {
+                Value::Str(raw) => raw.as_str(),
+                _ => return Err(SocialError::Schema),
+            };
             let members = parse_osservazioni(raw)?;
             for (label, comportamento) in members {
                 let id = id_altro(&label);

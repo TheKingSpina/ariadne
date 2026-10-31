@@ -453,8 +453,6 @@ fn l5_check6_l5_mixed_with_other_tags_is_schema() {
 
 // [checklist 6 / L5.10] base incoerente → HeadMatch (identico pattern L4.8).
 #[test]
-// [checklist 6 / L5.10] base incoerente → HeadMatch (identico pattern L4.8).
-#[test]
 fn l5_check6_base_incoerente_is_head_match() {
     let mut log = Log::genesis(1042).unwrap();
     append_obs(&mut log, 1, &[obs_member("bob", 1)]);
