@@ -25,6 +25,7 @@ pub mod memory;
 mod payload;
 pub mod prng;
 pub mod selection;
+pub mod social;
 pub mod state;
 pub mod view;
 
