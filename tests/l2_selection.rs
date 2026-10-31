@@ -181,3 +181,16 @@ fn in_window_select_without_config_is_error() {
  l2(&mut x,0,"select",vec![("at",Value::Int(0)),("ups",Value::Str("[]".into())),("downs",Value::Str("[1]".into()))]);
  assert_eq!(selection::build_active(&x).unwrap_err(),L2Error::Config);
 }
+
+#[test]
+fn repeated_edge_reactivates_endpoints_on_each_event() {
+ let mut x=Log::genesis(1).unwrap(); let base=x.clone();
+ config(&mut x,0,0,1); nodes(&mut x,1,&["A","B"]);
+ let edge=Value::Str("[{\"dst_key\":\"B\",\"dst_kind\":\"letter\",\"rel\":\"link\",\"src_key\":\"A\",\"src_kind\":\"letter\"}]".into());
+ append(&mut x,2,vec![("edges",edge.clone())]);
+ append(&mut x,3,vec![("edges",edge)]);
+ let ds=selection::evaluate(&x,&selection::build_active(&base).unwrap()).unwrap();
+ for (at,tick) in [(3,2),(4,3)] {
+  assert!(ds.contains(&Decision::Select{at,tick,ups:vec![],downs:vec![2,2]}),"{ds:?}");
+ }
+}
