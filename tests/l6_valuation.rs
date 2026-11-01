@@ -86,9 +86,10 @@ fn l6_wilcoxon_discards_zeros_and_negative_diffs_lower_w() {
     let r = wilcoxon_one_sided_greater(&[0, 100, 200]).unwrap();
     assert_eq!(r.n, 2);
     assert!((r.w - 3.0).abs() < 1e-9);
-    // con una differenza negativa, il rango va al lato negativo: W cala
+    // [−100, 100, 200]: |−100| = |+100| legano → rango medio 1.5 per
+    // entrambe (L6.7); solo le differenze positive entrano in W → 1.5+3.
     let r2 = wilcoxon_one_sided_greater(&[-100, 100, 200]).unwrap();
-    assert!((r2.w - 3.0).abs() < 1e-9, "−100 ha rango 1 ma non positivo");
+    assert!((r2.w - 4.5).abs() < 1e-9, "tie rango medio: W = 4.5");
     assert!(r2.p > r.p, "evidenza minore → p maggiore (una coda >)");
 }
 
