@@ -27,6 +27,7 @@ pub mod prng;
 pub mod selection;
 pub mod social;
 pub mod state;
+pub mod valuation;
 pub mod view;
 
 pub use event::{compute_hash, Event, EventType, GENESIS_PREV_HASH};
