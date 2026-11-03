@@ -107,8 +107,7 @@ formale di `data` e i casi in cui le fonti vuote siano valide sono
 | `level` | `kind` proposti | `data` da definire con schema chiuso |
 | --- | --- | --- |
 | `L1` | `extract` | `nodes`, `edges` con membri F1 e ordinamento L1 |
-| `L2` | `config`, `select`, `summary`, `barrier` | campi corrispondenti a L2.1/L2.21, escluso il vecchio discriminante top-level `l2`; la corrispondenza con `L2_SUMMARY` è da fissare in S4/S6 |
-| **TBD** | `L2_WINDOW_CLOSE` | chiusura esplicita proposta, classificata non-L2 per la semantica della finestra; `level`, `kind` wire e campi esatti da firmare in S4/S6 |
+| `L2` | `config`, `select`, `summary`, `barrier` | campi corrispondenti a L2.1/L2.21, escluso il vecchio discriminante top-level `l2`; chiusura esplicita con `phase="close"` proposta in S6 |
 | `L3` | `config`, `promote`, `archive`, `recall` | campi corrispondenti a L3.1–L3.7, escluso `l3` |
 | `L4` | `narrate`, `snapshot` | campi corrispondenti a L4.1, escluso `l4` |
 | `L5` | `observation`, `predict`, `model_update` | osservazioni o campi decisionali L5.2/L5.10, escluso `l5` |
@@ -149,38 +148,38 @@ valido per `L1/extract` e quali tipi di fonte siano ammessi (**S4**).
 
 ### 3.2 L2 — finestra offline: proposta da firmare
 
-kingspina propone la seguente regola precisa, che sostituisce nella bozza
-la precedente proposta di chiusura con `L2/barrier phase="close"`:
+kingspina ha rettificato la proposta precedente, che chiamava
+imprecisamente «non-L2» l'evento di chiusura. La nuova formulazione
+proposta per v2 è:
 
-1. La finestra si apre e i `select` ammessi registrano le espulsioni;
+1. La finestra si apre e i `L2/select` ammessi registrano le espulsioni;
    l'ordine concreto è fissato nel manifest.
-2. Tra due cicli L0 completi il driver appone un AUX denominato
-   **`L2_WINDOW_CLOSE`**, classificato **non-L2 ai fini della finestra**.
-   È l'eccezione esplicita al rifiuto degli altri eventi non-L2 prima della
-   chiusura: chiude la finestra e congela le espulsioni già registrate.
-3. **Subito dopo, senza eventi intermedi**, il driver appone un AUX
-   **`L2_SUMMARY`** con le espulsioni congelate e le rispettive seq sorgenti.
-   I due AUX hanno il tick dell'ultimo STATE completato e seq globali
-   consecutive; non interrompono la tripletta L0 e non avanzano il tick.
-4. Un evento non-L2 **diverso dal `L2_WINDOW_CLOSE` autorizzato** prima
-   della chiusura è rifiutato. Il record di chiusura è quindi non-L2 ma
-   esplicitamente ammesso per compiere la chiusura, non un evento da
-   respingere in base alla regola precedente.
+2. Tra uno `STATE` di ciclo completato e il `SENSE` del ciclo successivo,
+   un AUX **`L2/barrier` con `phase="close"`** chiude esplicitamente la
+   finestra. È classificato L2, non non-L2.
+3. Dopo la chiusura, un AUX **`L2/summary`** riporta soltanto le espulsioni
+   già registrate nella finestra. Il nuovo `SENSE` resta fuori finestra e la
+   tripletta L0 `SENSE → ACTION → STATE` rimane contigua e indivisibile.
+4. Rimane nella bozza la proposta precedente di rifiutare un evento non-L2
+   prima della chiusura esplicita: non chiude implicitamente la finestra.
+   La compatibilità di questa proposta con tutti i casi limite di v2 resta
+   da approvare; non è una regola vigente per i log storici.
 
 Questa è una **proposta di modifica di L2.25 per v2**, non la regola vigente
 per i log storici. Non implica una modifica retroattiva ai report o ai log
-v1. Restano da definire e approvare: codifica esatta `level`/`kind` dei due
-AUX e loro schema chiuso; significato di «seq sorgenti» delle espulsioni;
-eventi L2 ammessi nella finestra; trattamento di log interrotto o terminato
-tra chiusura e summary; errori specifici. La proposta dice di apporre sempre
-un summary subito dopo la chiusura: va chiarito come si coordini con L2.15,
-che non prevede summary per una finestra senza espulsioni. Nessuna delle due
-interpretazioni è scelta in questa bozza (S3–S4 e dettaglio S6).
+v1. Restano da definire e approvare: schema chiuso dei payload; significato
+delle seq associate alle espulsioni; eventi L2 ammessi nella finestra;
+trattamento di log interrotto o terminato tra chiusura e summary; errori
+specifici. Va inoltre chiarito se il summary debba essere immediatamente
+consecutivo alla chiusura e se sia richiesto anche senza espulsioni: L2.15
+vigente non lo prevede per una finestra senza espulsioni. Nessuna di queste
+alternative è scelta in questa bozza (S3–S4 e dettaglio S6).
 
-**S6 — proposta ricevuta, non firma formale:** la coppia `L2_WINDOW_CLOSE`
-→ `L2_SUMMARY` è riportata sopra; il testo normativo completo e i casi limite
-richiedono la firma di kingspina. L'agente non firma. Manifest e oracoli
-restano incompleti; nessun ordine eseguibile è dichiarato pronto.
+**S6 — proposta ricevuta, non firma formale:** la chiusura `L2/barrier` con
+`phase="close"`, seguita dal `L2/summary`, è riportata sopra; il testo
+normativo completo e i casi limite richiedono la firma di kingspina. L'agente
+non firma. Manifest e oracoli restano incompleti; nessun ordine eseguibile è
+dichiarato pronto.
 
 ### 3.3 L3
 
@@ -344,7 +343,90 @@ Non si afferma che tali test esistano già o che l'architettura passi.
 - **S16:** regole per log misti e/o estensione di prefissi storici.
 - **S17:** versionamento e compatibilità delle API.
 
-**Firma di kingspina sull'emendamento:** non apposta. S1 e la direzione S6
-sono proposte comunicate da kingspina, non una firma dell'emendamento; le
-altre decisioni restano non firmate. Nessuna implementazione o esecuzione è
-autorizzata da questo aggiornamento.
+**Firma di kingspina sull'emendamento:** non apposta. Le indicazioni più
+recenti di kingspina sono registrate nell'appendice seguente: prevalgono
+come input di redazione sulle proposte precedenti incompatibili, senza
+costituire da sole un testo normativo completo. Nessuna implementazione o
+esecuzione è autorizzata da questo aggiornamento.
+
+## 9. Appendice — indicazioni successive di kingspina
+
+Le indicazioni seguenti aggiornano la direzione della bozza. **Non sono una
+firma dell'emendamento completo** e non modificano le leggi vigenti. Le
+sezioni precedenti contengono proposte storiche: dove differiscono da questa
+appendice devono essere riformulate prima della presentazione alla firma.
+
+### Scelte espresse
+
+- **S1 — architettura:** strada **A**, AUX nel log.
+- **S2 — collocazione e atomicità:** AUX ammessi solo dopo GENESIS a tick
+  `0` o tra `STATE` e `SENSE`; append atomica.
+- **S4 — campi dello schema chiuso:** `protocol_version`, `level`, `kind`,
+  `tick`, `sources`, `provenance`, `data`.
+- **S5 — origine:** `origin_seq` indica sempre la **seq L0 sorgente**,
+  distinta dalla seq dell'AUX di estrazione. Questa indicazione sostituisce
+  la proposta della §3.1 che faceva coincidere `origin_seq` con la seq AUX.
+- **S6 — chiusura e summary:** `L2/barrier` con `phase="close"` deve essere
+  seguito immediatamente da `L2/summary` alla seq globale successiva; un
+  summary vuoto è valido. Nessun evento intermedio è ammesso; log interrotto
+  tra i due o sequenza diversa non è valido. Questa indicazione supera la
+  domanda della §3.2 sulla consecutività e sulla finestra senza espulsioni;
+  la relazione con L2.15 storico richiede testo di emendamento esplicito.
+- **S7–S17 — indirizzi indicati:** SHA-256 su JSON canonico; confronto L4
+  dei campi semantici preregistrati; osservazioni L5 con `agente`,
+  `soggetto`, `ordine ToM`, `proposizione`, `confidenza`, `sources`; ID
+  deterministici di scenario/run/interazione; gate negativo con payload
+  alterato e rifiuto `digest_mismatch`; replay indipendente di ogni azione e
+  reward; versione obbligatoria nel manifest; rifiuto di log misti o non
+  dichiarati. Gli oracoli si congelano a partire dai payload definitivi:
+  non si indovinano valori attesi.
+
+### Dettagli ancora da completare prima della firma
+
+1. **Schema e canone:** tipi e domini di tutti i campi, regole di escaping,
+   struttura di `data`/`provenance`/`sources` per ogni `level/kind`, e
+   definizione byte-per-byte del JSON canonico. Chiarire se `tick` è solo il
+   campo top-level L0 o compare anche nel payload, con regola di uguaglianza
+   se duplicato; collocazione esatta di `protocol_version` e sua relazione
+   con la versione obbligatoria nel manifest. I payload L0 attuali sono
+   piatti: l'eventuale codifica interna va definita espressamente.
+2. **Atomicità e fase:** definire il confine dell'append atomica, il
+   comportamento in caso di errore e se la coppia close/summary sia atomica
+   come unità o composta da due append atomiche con prefisso interrotto
+   invalido. Chiarire se uno `STATE` compensativo abiliti AUX; come verificare
+   l'ordine dopo genesi e tra cicli senza ridurre la verifica alla sola
+   integrità hash.
+3. **Origine e attivazioni:** se un AUX cita più seq L0 sorgenti, quale
+   singola seq diventa `origin_seq` e come si valida la relazione con il
+   nodo/arco; regola di riprova, conteggio di attivazioni e deduplicazione
+   L2/L3 quando più AUX citano la stessa fonte, nel rispetto della decisione
+   espressa su `origin_seq`. Tipi delle fonti, riferimenti precedenti e
+   significato di `sources`/`provenance` restano da definire.
+4. **Summary e origine:** schema esatto del summary, significato delle seq
+   delle espulsioni, forma canonica del summary vuoto e gestione delle altre
+   possibili cause di errore; la chiusura immediata sostituisce per v2 la
+   semantica storica soltanto mediante testo firmato.
+5. **L4 e L5:** elenco esatto dei campi semantici L4 e preimage di ogni hash;
+   domini e codifica di agente, soggetto, ordine ToM, proposizione e
+   confidenza, significato e causalità di `sources`; rapporto con le API e
+   gli eventi storici. Uno snapshot diagnostico dopo L5 non diventa per
+   questo una narrazione L4.
+6. **Versionamento e compatibilità:** versione concreta, scelta e schema
+   delle API, trattamento dei log v1 storici corredati da manifest esplicito,
+   comportamento dei vecchi reader e definizione verificabile di «log
+   misto»; il rifiuto dei log non dichiarati non equivale a cancellare o
+   riscrivere gli artefatti storici.
+7. **Gate e artefatti:** fixture positiva, byte e posizione della modifica
+   negativa, punto in cui si verifica il digest e schema dell'errore
+   `digest_mismatch`; significato, input e canone di ciascun digest,
+   identificativi deterministici, percorsi, conservazione e assenza di
+   riferimenti circolari. Un rifiuto negativo atteso dà PASS al gate e non
+   conta come run invalida.
+8. **Manifest e oracoli:** sequenza di eventi, tick e seq, fixture L2/L3,
+   copertura ToM, timeout, procedura indipendente di replay L6 e valori
+   attesi sono da derivare dai payload definitivi, preregistrare e approvare.
+   Il commit da eseguire resta da fissare dopo l'emendamento e
+   l'implementazione approvati.
+
+**Fermata:** nessuna modifica alla logica o alle leggi vigenti, nessun test
+e nessuna esecuzione Docker per effetto di questa appendice.
