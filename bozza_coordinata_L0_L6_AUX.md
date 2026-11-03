@@ -24,7 +24,7 @@ all'approvazione dell'emendamento.
 | Modifiche e rischio | Ampie: L0, L1–L5, parser, replay e API | L0 invariato, ma servono specifica del registro, driver/adattatore e verifica di ciò che effettivamente entra nelle viste |
 | Che cosa prova | Integrazione nel medesimo log esteso, se implementata e verificata | Integrazione mediante una frontiera esterna esplicita; non prova da sola che le viste attuali leggano quei record |
 
-### Raccomandazione — da firmare
+### Scelta A — proposta da incorporare
 
 Si raccomanda **A: AUX nella catena L0**, perché l'obiettivo espresso è
 assegnare una seq globale agli eventi ausiliari e collegare decisioni e
@@ -33,8 +33,10 @@ ed è appropriata se si preferisce una prova mediata da registri esterni, ma
 richiederebbe comunque un ponte per L1–L5 e non soddisfa automaticamente il
 requisito di una catena principale comprendente gli ausiliari.
 
-**FIRMA S1:** scegliere A, B o un'altra architettura. Se non si sceglie A,
-gli articoli AUX seguenti non costituiscono l'emendamento della strada B.
+kingspina ha indicato di scegliere **A** e di integrare tale scelta come
+proposta. La scelta è registrata nel testo di lavoro, **non come firma
+dell'emendamento**: l'approvazione formale resta necessaria. Gli articoli
+seguenti descrivono A e non costituiscono l'emendamento della strada B.
 
 ## 2. L0 — formato, ciclo e stato: proposta per A
 
@@ -146,26 +148,32 @@ valido per `L1/extract` e quali tipi di fonte siano ammessi (**S4**).
 
 ### 3.2 L2 — finestra offline: proposta da firmare
 
-Propongo di riformulare L2.25 per il formato v2 usando `level`/`kind`:
+kingspina propone di sostituire la precedente chiusura implicita con una
+**chiusura esplicita tra cicli L0 completi**. La sequenza proposta per v2 è:
 
-1. `L2/barrier` senza fase apre la finestra; `L2/barrier` con
-   `phase="close"` la chiude. Eventi L2 ammessi nella finestra seguono gli
-   schemi e vincoli già fissati dalla legge.
-2. **Primo evento successivo che non sia un AUX di livello L2**: chiusura
-   implicita prima del trattamento di tale evento; se è un AUX
-   `L1/extract`, esso è anche evento di valutazione. Un `SENSE`, `ACTION`,
-   `STATE` o AUX L1/L3/L4/L5 è quindi non-L2 ai fini della chiusura.
-3. Il summary, se dovuto, include soltanto le espulsioni dei select già
-   registrati nella finestra e precede il select eventualmente generato
-   dall'evento di chiusura; la sua apposizione segue l'ordine globale
-   preregistrato e i vincoli di fase L0.
+1. `L2/barrier` senza fase apre la finestra; uno o più `L2/select`, quando
+   previsti, sono apposti nella finestra.
+2. `L2/barrier` con `phase="close"` chiude esplicitamente la finestra.
+3. Il `L2/summary`, se dovuto per le espulsioni registrate nella finestra,
+   segue la chiusura nel rispetto del manifest e prima di iniziare la
+   successiva tripletta L0. La sequenza apertura → select → chiusura →
+   summary resta nell'intervallo tra cicli completi.
+4. Un evento **non-L2** prima della chiusura esplicita è rifiutato: non
+   chiude implicitamente la finestra. Questo include l'avvio di un nuovo
+   ciclo L0 e gli AUX di altri livelli. Il summary non viene quindi inserito
+   nella tripletta `SENSE → ACTION → STATE`.
 
-**FIRMA S6:** confermare o sostituire queste regole, in particolare come
-conciliare emissione del summary, tripletta L0 indivisibile e ordine di
-append se l'evento che chiude la finestra è il `SENSE` di un nuovo ciclo.
-Finché questo punto non è risolto, non è lecito attribuire un ordine
-eseguibile certo al manifest. Schema preciso delle configurazioni e degli
-errori resta S3–S4.
+Questa è una **proposta di modifica di L2.25 per v2**, non la regola vigente
+per i log storici. Non implica una modifica retroattiva ai report o ai log
+v1. La sequenza indicata non precisa ancora tutti gli eventi L2 ammessi in
+finestra, il trattamento della fine log con finestra aperta, la posizione
+esatta del summary dovuto rispetto a eventuali altri AUX L2, né gli errori
+specifici: restano da definire e approvare (S3–S4 e dettaglio S6).
+
+**S6 — proposta ricevuta, non firma formale:** la scelta di chiusura
+esplicita è riportata sopra; il testo normativo completo e i casi limite
+richiedono approvazione. Manifest e oracoli restano incompleti; nessun ordine
+eseguibile è dichiarato pronto.
 
 ### 3.3 L3
 
@@ -308,13 +316,15 @@ Non si afferma che tali test esistano già o che l'architettura passi.
 
 ## 8. Riepilogo delle firme umane richieste
 
-- **S1:** architettura A / B / altra.
+- **S1:** A indicata da kingspina come proposta; approvazione formale
+  dell'emendamento ancora necessaria.
 - **S2:** AUX dopo genesi e dopo STATE compensativo; definizione della fase.
 - **S3:** errori e mapping per parser, fold e API L1–L5.
 - **S4:** schemi canonici completi `data`/`provenance`/`sources`, fonti vuote
   e tipi di fonte ammessi per ogni `level/kind`.
 - **S5:** `origin_seq`, seq di attivazione, sorgenti e dedup L1–L3.
-- **S6:** chiusura L2 e apposizione summary compatibile con il ciclo L0.
+- **S6:** chiusura esplicita indicata da kingspina come proposta; testo
+  completo, casi limite e approvazione formale ancora necessari.
 - **S7:** regole L4 v2 per template, bibliografia, hash e compatibilità.
 - **S8:** perimetro esatto della divergenza semantica L4.
 - **S9:** schema e provenienza delle osservazioni L5 e frontiera.
@@ -327,5 +337,7 @@ Non si afferma che tali test esistano già o che l'architettura passi.
 - **S16:** regole per log misti e/o estensione di prefissi storici.
 - **S17:** versionamento e compatibilità delle API.
 
-**Firma di kingspina sull'emendamento:** non apposta. Nessuna delle firme
-elencate si presume concessa dalla richiesta di preparare questa bozza.
+**Firma di kingspina sull'emendamento:** non apposta. S1 e la direzione S6
+sono proposte comunicate da kingspina, non una firma dell'emendamento; le
+altre decisioni restano non firmate. Nessuna implementazione o esecuzione è
+autorizzata da questo aggiornamento.
