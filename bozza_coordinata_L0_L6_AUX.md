@@ -430,3 +430,148 @@ appendice devono essere riformulate prima della presentazione alla firma.
 
 **Fermata:** nessuna modifica alla logica o alle leggi vigenti, nessun test
 e nessuna esecuzione Docker per effetto di questa appendice.
+
+## 10. Proposte concrete sui dettagli aperti — da approvare
+
+Questa sezione trascrive le proposte dell'agente presentate a kingspina dopo
+le indicazioni della §9. **Non sono decisioni né firme.** Dove differiscono
+dalle sezioni precedenti sono alternative da sottoporre alla firma, non
+modifiche automatiche della legge. Gli schemi completi restano da redigere.
+
+### 10.1 Campi e collocazione
+
+L'evento mantiene i campi top-level L0 `seq`, `tick`, `type`, `payload`,
+`prev_hash`, `hash`. Per `AUX` si propone un payload piatto e chiuso:
+
+```text
+protocol_version : stringa
+level            : stringa
+kind             : stringa
+sources          : stringa con JSON canonico
+provenance       : stringa con JSON canonico
+data             : stringa con JSON canonico
+```
+
+Si propone che `tick` sia **solo top-level**, non duplicato nel payload.
+`protocol_version = "2"` e la versione del manifest devono coincidere.
+`sources` è un array canonico crescente e deduplicato di seq L0 sorgenti
+precedenti; `provenance` e `data` sono oggetti canonici con schema specifico
+per `level/kind`. Gli AUX sarebbero ammessi dopo genesi a tick 0 o fra
+`STATE` di ciclo completato e `SENSE` successivo; tick uguale a quello
+dell'ultimo STATE ammesso, nessun draw.
+
+**Da firmare:** collocazione del tick e versione; schemi chiusi completi,
+domini e regole byte-per-byte del JSON canonico per ogni coppia
+`level/kind`, trattamento degli STATE compensativi e condizioni di fonti
+vuote. Questa proposta non sostituisce l'indicazione di kingspina che `tick`
+fa parte dello schema complessivo: propone di soddisfarla nel top-level L0.
+
+### 10.2 Atomicità close/summary
+
+Si propone una **singola operazione atomica di append della coppia**:
+`AUX L2/barrier` con `phase="close"`, seguito da `AUX L2/summary`, anche
+vuoto in assenza di espulsioni, stesso tick e seq consecutive. O vengono
+apposti entrambi, oppure il log non cambia. Un log esterno che termini dopo
+close o contenga un evento intermedio è rifiutato.
+
+L'operazione richiede una nuova API: due chiamate separate all'attuale
+`Log::append` non garantiscono da sole l'atomicità della coppia. Semantica
+di errore, verifica e garanzie effettive restano da firmare e testare.
+
+### 10.3 Sorgenti multiple e attivazioni
+
+Si propone di distinguere `aux_seq`, seq globale dell'estrazione, da
+`sources`, seq L0 sorgenti, e da `origin_seq`, **minore seq L0 sorgente
+valida associata alla prima dichiarazione di quella specifica identità o
+arco**. Se un AUX dichiara più membri, ciascuno indica le proprie sorgenti
+in `provenance`; l'elenco complessivo dell'evento non basta a stabilire il
+rapporto membro-fonte.
+
+Per L2/L3 si propone una sola attivazione per identità e `aux_seq`, con
+`origin_seq` stabile e sorgenti conservate per attivazione. **Decisione
+esplicita richiesta:** due AUX distinti che citano la stessa sorgente L0
+contano come due attivazioni, oppure si deduplica per identità e seq
+sorgente? La scelta non è stata fatta. Tipi di fonte e validazione della
+relazione con ogni membro restano da definire.
+
+### 10.4 L4
+
+Si propone di conservare coppie consecutive `AUX L4/narrate` con `at`,
+`text`, `sources`, e `AUX L4/snapshot` con `at`, `self_hash`. `at` identifica
+la seq globale dell'evento che genera la revisione; le sorgenti L0 sono
+conservate nella provenienza.
+
+Il confronto di divergenza preregistra `schema_version`, `statements[].at`,
+`statements[].sources`, `statements[].text` come campi semantici. Esclude
+`head_hash` e `self_hash` dal confronto di uguaglianza e verifica
+separatamente ciascun hash sul proprio preimage canonico. Se eventi
+irrilevanti spostano le seq, possono cambiare anche `at` e `sources`: la
+fixture deve preservare tali seq oppure va firmato un confronto diverso.
+Schema definitivo e preimage esatti restano da approvare.
+
+### 10.5 L5
+
+Per ogni osservazione `AUX L5/observation` si propongono:
+
+```text
+agente       : stringa non vuota
+soggetto     : stringa non vuota
+ordine_tom   : intero non negativo
+proposizione : stringa non vuota
+confidenza   : intero fra 0 e 1000
+sources      : array canonico di seq L0 precedenti
+```
+
+La scala intera **0–1000 è una proposta**, non una scelta già approvata.
+Occorre definire il rapporto con il modello L5 storico `altro`/
+`comportamento` intero. Si propone un adattamento esplicito e versionato,
+senza inventare una conversione da proposizione/confidenza a comportamento:
+kingspina deve scegliere se mantenere i campi distinti o firmare una
+funzione deterministica. Il test ToM deve fissare significato degli ordini
+ammessi e output esatto. La relazione fra `sources` per osservazione e
+`sources` dello schema AUX esterno resta da specificare.
+
+### 10.6 Versioni e log storici
+
+Proposta: v1 identifica log storici dichiarati nel manifest, senza AUX; v2
+identifica log dichiarati con schema AUX v2. Versione mancante o sconosciuta
+e `AUX` in un log dichiarato v1 danno rifiuto. Si propone il rifiuto in v2
+di log che mescolino vecchie e nuove rappresentazioni delle decisioni
+L1–L5; la definizione precisa di «misto» richiede firma.
+
+Nessuna conversione, riscrittura o ricalcolo degli hash storici. Un nuovo
+lettore deve poter verificare v1 quando dichiarato esplicitamente; un vecchio
+lettore può rifiutare v2. Si propongono **API versionate separate** per
+evitare interpretazioni silenziose; la compatibilità non è dimostrata finché
+non è implementata e testata.
+
+### 10.7 Manifest, oracoli e gate
+
+Il manifest definitivo fisserebbe commit post-emendamento, immagine Docker,
+schema, eventi, tick, ordine, identificativi deterministici, fixture,
+metodo di replay indipendente, timeout di 5 secondi per coppia, campi degli
+artefatti e metodo SHA-256. Gli oracoli attesi vengono **derivati dai
+payload definitivi e congelati prima della run**, con preimage e metodo
+documentati. Gli hash degli artefatti prodotti dalla run sono calcolati
+dopo la run: il manifest iniziale può fissarne il metodo, non inventarli.
+
+Per il gate negativo si propone di alterare un byte del payload della
+fixture positiva conservando l'hash originale: `digest_mismatch` prima
+della valutazione → PASS del gate negativo; accettazione o motivo diverso
+da quello preregistrato → FAIL. Il rifiuto atteso non è una run invalida.
+Byte precisi, fixture, punto del controllo e schema dell'errore restano da
+definire.
+
+### 10.8 Decisioni principali ancora richieste
+
+1. Due AUX distinti con la stessa sorgente L0 contano una o due volte per
+   le attivazioni L2/L3?
+2. Come si collega la nuova proposizione con confidenza al comportamento
+   intero del modello L5 vigente?
+3. In v2 si vietano completamente le vecchie rappresentazioni L1–L5 nello
+   stesso log? Qual è la definizione esatta di log misto?
+4. È approvata la scala di confidenza 0–1000? Sono approvati tick solo
+   top-level, la coppia di append atomica e le API versionate separate?
+
+Resta sospesa qualsiasi implementazione o esecuzione fino ad approvazione
+dell'emendamento completo e dei manifest/oracoli completi.
