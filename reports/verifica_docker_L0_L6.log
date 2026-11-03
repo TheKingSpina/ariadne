@@ -1,0 +1,2215 @@
+ARIADNE DOCKER VERIFICATION — preflight and execution evidence
+COMMIT=d41cc76dcf1c2c5456c7f4e8753c521f45a064a4
+UTC=2026-11-03T10:14:00.494211+00:00
+BASE_IMAGE=rust:1.85.0-bookworm@sha256:0ff31c9ffa641a62e48d543fb00b4960955ea375f40776f40f585b89e654cc5e
+TIMEOUT=5s per pair, GNU timeout SIGKILL; law notes/L6_legge_valutazione.md L6.11
+SEEDS=1000..1099
+SOURCE=git archive HEAD (tracked files only). No host bind mounts. No prior run artifacts. Build --no-cache.
+
+=== VERIFICATION DEFINITION Dockerfile ===
+FROM rust:1.85.0-bookworm@sha256:0ff31c9ffa641a62e48d543fb00b4960955ea375f40776f40f585b89e654cc5e
+WORKDIR /source
+ADD source.tar /source/
+RUN cargo fetch --locked && cargo build --release --locked --offline
+COPY probe.rs /verify/probe.rs
+RUN rustc --edition=2021 /verify/probe.rs --extern ariadne=/source/target/release/libariadne.rlib -L dependency=/source/target/release/deps -o /verify/probe
+COPY verify.sh /verify/verify.sh
+COPY r1-r2.txt /verify/r1-r2.txt
+ENTRYPOINT ["bash", "/verify/verify.sh"]
+
+
+=== VERIFICATION DEFINITION probe.rs ===
+use ariadne::{Log, EventType, Payload, Value};
+use ariadne::valuation::{run_pair, fold_run, wilcoxon_one_sided_greater, TEST_TASKS, ValuationError};
+fn main() {
+    let args: Vec<String> = std::env::args().collect();
+    match args[1].as_str() {
+        "gate" => {
+            let mut log = Log::genesis(1000).unwrap();
+            log.append(1, EventType::Sense, Payload::from_pairs([
+                ("cue", Value::from("cue:00")), ("extra", Value::Int(1))
+            ])).unwrap();
+            let negative = fold_run(&log);
+            println!("NEGATIVE extra payload key: {negative:?}");
+            assert_eq!(negative, Err(ValuationError::Protocol));
+            let pair = run_pair(1000);
+            let log = Log::from_jsonl(&pair.memoria.jsonl).unwrap();
+            let positive = fold_run(&log);
+            println!("POSITIVE generated memory run: {positive:?}");
+            assert_eq!(positive.unwrap(), (pair.memoria.learning_milli, pair.memoria.test_milli));
+            println!("GATE negative rejected / positive accepted: PASS");
+        }
+        "seed" => {
+            let seed = args[2].parse().unwrap();
+            let r = run_pair(seed);
+            let m = r.memoria.test_milli / TEST_TASKS as i64;
+            let c = r.controllo.test_milli / TEST_TASKS as i64;
+            println!("seed={seed} memoria_milli={m} controllo_milli={c} diff={} replay_reported={}", m-c, r.replay_ok);
+            for (arm, output) in [("memoria", &r.memoria), ("controllo", &r.controllo)] {
+                let log = Log::from_jsonl(&output.jsonl).unwrap();
+                log.verify().unwrap();
+                println!("seed={seed} arm={arm} events={} head_hash={}", log.events().len(), log.events().last().unwrap().hash);
+            }
+            assert!(r.replay_ok);
+            println!("DIFF {}", m-c);
+        }
+        "stats" => {
+            let input = std::fs::read_to_string(&args[2]).unwrap();
+            let diffs: Vec<i64> = input.lines().map(|s| s.parse().unwrap()).collect();
+            assert_eq!(diffs.len(), 100);
+            let r = wilcoxon_one_sided_greater(&diffs).unwrap();
+            println!("Wilcoxon implementation=src/valuation.rs n={} W={} p={:.17e} Delta={:.17} n_pairs={}", r.n, r.w, r.p, r.delta_bar, diffs.len());
+            assert!(r.p < 0.01 && r.delta_bar >= 0.30);
+        }
+        _ => panic!("unknown verification mode"),
+    }
+}
+
+
+=== VERIFICATION DEFINITION verify.sh ===
+#!/bin/bash
+set -u
+export CARGO_NET_OFFLINE=true
+echo '=== CONTAINER START ==='
+date -u
+rustc --version --verbose
+cargo --version
+cat /etc/os-release
+dpkg-query -W
+sha256sum Cargo.lock /verify/probe.rs /verify/verify.sh
+echo '=== PINNED CARGO DEPENDENCIES ==='
+cat Cargo.lock
+echo '=== BLOCK 1: NEGATIVE/POSITIVE GATE ==='
+/verify/probe gate
+b1=$?
+echo "BLOCK1_EXIT=$b1"
+echo '=== BLOCK 2: SINGLE E2E L0 THROUGH L6 ==='
+echo 'FAIL: no tracked unified L0-L6 scenario exists. Suite is not substituted for an E2E execution.'
+echo 'Law L6.4 makes L1-L5 use optional; no signed cross-level scenario parameters supplied. No new scenario invented.'
+find tests -maxdepth 1 -type f | sort
+echo '=== BLOCK 3: R1/R2 CODE EVIDENCE ==='
+echo 'Scope explicitly identified from reports/compact_review_l0_l3_b2770bd.md: L2 R1 and R2.'
+cat /verify/r1-r2.txt
+nl -ba src/selection.rs | sed -n '19,69p'
+grep -F 'mentioned.extend(edge_mentions(v,&view)?)' src/selection.rs && grep -F 'let tau=config.ok_or(L2Error::Config)?.1;' src/selection.rs
+b3=$?
+echo "BLOCK3_CODE_CHECK_EXIT=$b3"
+echo '=== BLOCK 4: L6 CORPUS 1000-1099 ==='
+echo 'Timeout=5 seconds per pair (signed law L6.11); externally enforced with GNU timeout, SIGKILL. Startup included. No retries or seed exclusions.'
+timeout --version
+violations=0
+: > /verify/diffs.txt
+for seed in $(seq 1000 1099); do
+  timeout --signal=KILL 5s /verify/probe seed "$seed" > /verify/current-seed.txt 2>&1
+  rc=$?
+  cat /verify/current-seed.txt
+  echo "seed=$seed exit=$rc"
+  if [ "$rc" -ne 0 ]; then violations=$((violations+1)); else grep '^DIFF ' /verify/current-seed.txt | cut -d' ' -f2 >> /verify/diffs.txt; fi
+done
+/verify/probe stats /verify/diffs.txt
+stats_rc=$?
+echo "CORPUS_VIOLATIONS=$violations STATS_EXIT=$stats_rc"
+echo 'LIMIT: replay_reported only checks chain, JSONL roundtrip and reward fold; it does not independently regenerate all policy decisions (L6.9).'
+echo '=== SUPPLEMENT: EXISTING SUITE (NOT E2E) ==='
+cargo test --locked --offline
+debug_rc=$?
+cargo test --release --locked --offline
+release_rc=$?
+echo "SUITE_DEBUG_EXIT=$debug_rc SUITE_RELEASE_EXIT=$release_rc"
+echo '=== SUMMARY ==='
+if [ "$b1" -eq 0 ]; then echo 'BLOCK 1 PASS'; else echo 'BLOCK 1 FAIL'; fi
+echo 'BLOCK 2 FAIL: unified E2E absent / scenario unspecified'
+if [ "$b3" -eq 0 ]; then echo 'BLOCK 3 PASS (L2 R1/R2 code-presence check, reference 610b43c)'; else echo 'BLOCK 3 FAIL'; fi
+if [ "$violations" -eq 0 ] && [ "$stats_rc" -eq 0 ]; then echo 'BLOCK 4 PASS (corpus execution, hard timeout, implemented Wilcoxon thresholds only)'; else echo 'BLOCK 4 FAIL'; fi
+echo 'No acceptance verdict. Known replay limitation retained. No production logic or repository tests modified.'
+if [ "$b1" -eq 0 ] && [ "$b3" -eq 0 ] && [ "$violations" -eq 0 ] && [ "$stats_rc" -eq 0 ] && [ "$debug_rc" -eq 0 ] && [ "$release_rc" -eq 0 ]; then exit 2; else exit 1; fi
+
+
+COMMAND=['docker', 'version']
+Client: Docker Engine - Community
+ Version:           29.6.1
+ API version:       1.55
+ Go version:        go1.26.4
+ Git commit:        8900f1d330
+ Built:             Thu Jun 25 20:08:24 2026
+ OS/Arch:           darwin/arm64
+ Context:           orbstack
+
+Server: Docker Engine - Community
+ Engine:
+  Version:          29.8.2
+  API version:      1.56 (minimum version 1.40)
+  Go version:       go1.26.8
+  Git commit:       8af9fe3
+  Built:            Wed Sep 30 19:32:49 2026
+  OS/Arch:          linux/arm64
+  Experimental:     true
+ containerd:
+  Version:          v2.3.6
+  GitCommit:        ee2735368117d2eb259779949d5e75cdafec9761
+ runc:
+  Version:          1.5.2
+  GitCommit:        29dd3dc2b13b4123162e5fe132504bb4b15569f1
+ docker-init:
+  Version:          0.19.0
+  GitCommit:        de40ad0
+EXIT=0
+
+COMMAND=['docker', 'build', '--no-cache', '--progress=plain', '-t', 'ariadne-verify:d41cc76', '/private/var/folders/m4/4kk50jhs1qq0b7wn6csgfjrr0000gn/T/opencode/ariadne-docker-verify-wgoueb14/context']
+#0 building with "orbstack" instance using docker driver
+
+#1 [internal] load build definition from Dockerfile
+#1 transferring dockerfile: 541B done
+#1 DONE 0.1s
+
+#2 [internal] load metadata for docker.io/library/rust:1.85.0-bookworm@sha256:0ff31c9ffa641a62e48d543fb00b4960955ea375f40776f40f585b89e654cc5e
+#2 DONE 0.0s
+
+#3 [internal] load .dockerignore
+#3 transferring context: 2B done
+#3 DONE 0.0s
+
+#4 [internal] load build context
+#4 transferring context: 1.60MB 0.0s done
+#4 DONE 0.1s
+
+#5 [1/8] FROM docker.io/library/rust:1.85.0-bookworm@sha256:0ff31c9ffa641a62e48d543fb00b4960955ea375f40776f40f585b89e654cc5e
+#5 resolve docker.io/library/rust:1.85.0-bookworm@sha256:0ff31c9ffa641a62e48d543fb00b4960955ea375f40776f40f585b89e654cc5e 0.0s done
+#5 DONE 0.2s
+
+#5 [1/8] FROM docker.io/library/rust:1.85.0-bookworm@sha256:0ff31c9ffa641a62e48d543fb00b4960955ea375f40776f40f585b89e654cc5e
+#5 extracting sha256:545aa82ec479fb0ff3a196141d43d14e5ab1bd1098048223bfd21e505b70581f
+#5 extracting sha256:545aa82ec479fb0ff3a196141d43d14e5ab1bd1098048223bfd21e505b70581f 1.0s done
+#5 DONE 1.2s
+
+#5 [1/8] FROM docker.io/library/rust:1.85.0-bookworm@sha256:0ff31c9ffa641a62e48d543fb00b4960955ea375f40776f40f585b89e654cc5e
+#5 extracting sha256:4378a6c11dea5043896b9425853a850807e5845b0018fe01ddee56c16245fc3c
+#5 extracting sha256:4378a6c11dea5043896b9425853a850807e5845b0018fe01ddee56c16245fc3c 0.3s done
+#5 DONE 1.5s
+
+#5 [1/8] FROM docker.io/library/rust:1.85.0-bookworm@sha256:0ff31c9ffa641a62e48d543fb00b4960955ea375f40776f40f585b89e654cc5e
+#5 extracting sha256:140d15be2fea6dcd21c20cadae2601a118c08a938168718b2612ad6aca91f74a
+#5 extracting sha256:140d15be2fea6dcd21c20cadae2601a118c08a938168718b2612ad6aca91f74a 1.2s done
+#5 extracting sha256:1d9d474cce081e468bc6f85727459852112ba732fbbfe3236fae66c5fa8a5ed5
+#5 extracting sha256:1d9d474cce081e468bc6f85727459852112ba732fbbfe3236fae66c5fa8a5ed5 3.4s done
+#5 extracting sha256:36be92cf48bf1a06158f11a3be542ce4bd9cc0bba9dc39f0d34da0a332f157a5
+#5 extracting sha256:36be92cf48bf1a06158f11a3be542ce4bd9cc0bba9dc39f0d34da0a332f157a5 4.0s done
+#5 DONE 10.1s
+
+#6 [2/8] WORKDIR /source
+#6 DONE 0.5s
+
+#7 [3/8] ADD source.tar /source/
+#7 DONE 0.1s
+
+#8 [4/8] RUN cargo fetch --locked && cargo build --release --locked --offline
+#8 0.169     Updating crates.io index
+#8 0.996  Downloading crates ...
+#8 1.279   Downloaded crypto-common v0.1.7
+#8 1.297   Downloaded sha2 v0.10.9
+#8 1.305   Downloaded version_check v0.9.5
+#8 1.309   Downloaded block-buffer v0.10.4
+#8 1.309   Downloaded digest v0.10.7
+#8 1.327   Downloaded cfg-if v1.0.5
+#8 1.333   Downloaded cpufeatures v0.2.17
+#8 1.335   Downloaded generic-array v0.14.7
+#8 1.388   Downloaded typenum v1.20.1
+#8 1.497   Downloaded libc v0.2.191
+#8 1.613    Compiling version_check v0.9.5
+#8 1.613    Compiling typenum v1.20.1
+#8 1.613    Compiling libc v0.2.191
+#8 1.613    Compiling cfg-if v1.0.5
+#8 1.781    Compiling generic-array v0.14.7
+#8 2.580    Compiling crypto-common v0.1.7
+#8 2.580    Compiling block-buffer v0.10.4
+#8 2.645    Compiling digest v0.10.7
+#8 2.674    Compiling cpufeatures v0.2.17
+#8 2.756    Compiling sha2 v0.10.9
+#8 2.863    Compiling ariadne v0.1.0 (/source)
+#8 6.414     Finished `release` profile [optimized] target(s) in 4.85s
+#8 DONE 6.5s
+
+#9 [5/8] COPY probe.rs /verify/probe.rs
+#9 DONE 0.1s
+
+#10 [6/8] RUN rustc --edition=2021 /verify/probe.rs --extern ariadne=/source/target/release/libariadne.rlib -L dependency=/source/target/release/deps -o /verify/probe
+#10 DONE 0.3s
+
+#11 [7/8] COPY verify.sh /verify/verify.sh
+#11 DONE 0.1s
+
+#12 [8/8] COPY r1-r2.txt /verify/r1-r2.txt
+#12 DONE 0.0s
+
+#13 exporting to image
+#13 exporting layers
+#13 exporting layers 1.1s done
+#13 exporting manifest sha256:a612705b54f61dced8ac5a0e0ef23b5b0142c19c0b5f45465b2c47a0b85f5382
+#13 exporting manifest sha256:a612705b54f61dced8ac5a0e0ef23b5b0142c19c0b5f45465b2c47a0b85f5382 0.0s done
+#13 exporting config sha256:c87f1876414067aea876e12d8ecdb1353c9f2cf3ab54f1eeb12dadaf861198fc done
+#13 exporting attestation manifest sha256:0ff7412f58b17b46c810451c7f1c4e817f5f69272ac79ac179c0c65dd7642570 0.0s done
+#13 exporting manifest list sha256:36a10b18ee1a75a3624a6748a6d8d5ff0d3ff2ae4e73cf62fbc0a128c0cad5ba 0.0s done
+#13 naming to docker.io/library/ariadne-verify:d41cc76 done
+#13 unpacking to docker.io/library/ariadne-verify:d41cc76
+#13 unpacking to docker.io/library/ariadne-verify:d41cc76 0.3s done
+#13 DONE 1.5s
+EXIT=0
+[
+    {
+        "Id": "sha256:36a10b18ee1a75a3624a6748a6d8d5ff0d3ff2ae4e73cf62fbc0a128c0cad5ba",
+        "RepoTags": [
+            "ariadne-verify:d41cc76"
+        ],
+        "RepoDigests": [
+            "ariadne-verify@sha256:36a10b18ee1a75a3624a6748a6d8d5ff0d3ff2ae4e73cf62fbc0a128c0cad5ba"
+        ],
+        "Comment": "buildkit.dockerfile.v0",
+        "Created": "2026-11-03T11:14:18.946842523+01:00",
+        "Config": {
+            "Env": [
+                "PATH=/usr/local/cargo/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
+                "RUSTUP_HOME=/usr/local/rustup",
+                "CARGO_HOME=/usr/local/cargo",
+                "RUST_VERSION=1.85.0"
+            ],
+            "Entrypoint": [
+                "bash",
+                "/verify/verify.sh"
+            ],
+            "WorkingDir": "/source",
+            "Labels": {
+                "org.opencontainers.image.source": "https://github.com/rust-lang/docker-rust"
+            }
+        },
+        "Architecture": "arm64",
+        "Os": "linux",
+        "Size": 2455404564,
+        "RootFS": {
+            "Type": "layers",
+            "Layers": [
+                "sha256:948048d45864d1f64cd70b0341fd6c927cd3fa13f1d56b0054064b3ba2b2b467",
+                "sha256:f8e34ba5db3916c38ce4918304394347cc2403a5c92006a1e550a72977e0ac2a",
+                "sha256:b8974bf4470658c9b2f2bcc4d91db2ab6abc4a3c63ac1944b38519dbebfb53a0",
+                "sha256:77122155c2dc59977416cf2f760eb52aed66fd82acb25b7b006e0ad7f989ff55",
+                "sha256:e61bd151779656dee304566db7b4a662b784f522b4588f164305dc89e081541f",
+                "sha256:e83eee2687edf679f270199196f26b5ffda16d8c722e8c742a71a4fdeaef5011",
+                "sha256:6e4e02f05c6d01114a19339dffdb63f1a43b90373b4aaed7986e20eaa5ec9c8f",
+                "sha256:08b34fde0a98c41183a620bcf8b3db128ca21e0e1e814e969e50e1bd46565fc2",
+                "sha256:e751a4a906122cf9c89777417c38d57d65802c35882c808b9cc8a2c9705bfd12",
+                "sha256:06d1342d0ec7df02ff14d1a0edbda6ccbed0a283157a705196f9710de2267c4c",
+                "sha256:1fa1f0dfdb91fc93d065fd96dd78656323b88582e3ca2bad5e43866dcfa439f4",
+                "sha256:a50171ec392d74b854f86b187678224ab86eb5ce789d56b849703df0ded22560"
+            ]
+        },
+        "Metadata": {
+            "LastTagTime": "2026-11-03T10:14:20.101121913Z"
+        },
+        "Descriptor": {
+            "mediaType": "application/vnd.oci.image.index.v1+json",
+            "digest": "sha256:36a10b18ee1a75a3624a6748a6d8d5ff0d3ff2ae4e73cf62fbc0a128c0cad5ba",
+            "size": 856
+        },
+        "Identity": {
+            "Build": [
+                {
+                    "Ref": "zg60kovuf1m8vki3y9bov030x",
+                    "CreatedAt": "2026-11-03T11:14:20.432609848+01:00"
+                }
+            ]
+        }
+    }
+]
+
+COMMAND=['docker', 'run', '--rm', '--network=none', '--pull=never', 'ariadne-verify:d41cc76']
+=== CONTAINER START ===
+Tue Nov  3 10:14:21 UTC 2026
+rustc 1.85.0 (4d91de4e4 2025-02-17)
+binary: rustc
+commit-hash: 4d91de4e48198da2e33413efdcd9cd2cc0c46688
+commit-date: 2025-02-17
+host: aarch64-unknown-linux-gnu
+release: 1.85.0
+LLVM version: 19.1.7
+cargo 1.85.0 (d73d2caf9 2024-12-31)
+PRETTY_NAME="Debian GNU/Linux 12 (bookworm)"
+NAME="Debian GNU/Linux"
+VERSION_ID="12"
+VERSION="12 (bookworm)"
+VERSION_CODENAME=bookworm
+ID=debian
+HOME_URL="https://www.debian.org/"
+SUPPORT_URL="https://www.debian.org/support"
+BUG_REPORT_URL="https://bugs.debian.org/"
+adduser	3.134
+apt	2.6.1
+autoconf	2.71-3
+automake	1:1.16.5-1.3
+autotools-dev	20220109.1
+base-files	12.4+deb12u10
+base-passwd	3.6.1
+bash	5.2.15-2+b7
+binutils	2.40-2
+binutils-aarch64-linux-gnu	2.40-2
+binutils-common:arm64	2.40-2
+bsdutils	1:2.38.1-5+deb12u3
+bzip2	1.0.8-5+b1
+ca-certificates	20230311
+comerr-dev:arm64	2.1-1.47.0-2
+coreutils	9.1-1
+cpp	4:12.2.0-3
+cpp-12	12.2.0-14
+curl	7.88.1-10+deb12u12
+dash	0.5.12-2
+debconf	1.5.82
+debian-archive-keyring	2023.3+deb12u1
+debianutils	5.7-0.5~deb12u1
+default-libmysqlclient-dev:arm64	1.1.0
+diffutils	1:3.8-4
+dirmngr	2.2.40-1.1
+dpkg	1.21.22
+dpkg-dev	1.21.22
+e2fsprogs	1.47.0-2
+file	1:5.44-3
+findutils	4.9.0-4
+fontconfig	2.14.1-4
+fontconfig-config	2.14.1-4
+fonts-dejavu-core	2.37-6
+g++	4:12.2.0-3
+g++-12	12.2.0-14
+gcc	4:12.2.0-3
+gcc-12	12.2.0-14
+gcc-12-base:arm64	12.2.0-14
+gir1.2-freedesktop:arm64	1.74.0-3
+gir1.2-gdkpixbuf-2.0:arm64	2.42.10+dfsg-1+deb12u1
+gir1.2-glib-2.0:arm64	1.74.0-3
+gir1.2-rsvg-2.0:arm64	2.54.7+dfsg-1~deb12u1
+git	1:2.39.5-0+deb12u2
+git-man	1:2.39.5-0+deb12u2
+gnupg	2.2.40-1.1
+gnupg-l10n	2.2.40-1.1
+gnupg-utils	2.2.40-1.1
+gpg	2.2.40-1.1
+gpg-agent	2.2.40-1.1
+gpg-wks-client	2.2.40-1.1
+gpg-wks-server	2.2.40-1.1
+gpgconf	2.2.40-1.1
+gpgsm	2.2.40-1.1
+gpgv	2.2.40-1.1
+grep	3.8-5
+gzip	1.12-1
+hicolor-icon-theme	0.17-2
+hostname	3.23+nmu1
+icu-devtools	72.1-3
+imagemagick	8:6.9.11.60+dfsg-1.6+deb12u2
+imagemagick-6-common	8:6.9.11.60+dfsg-1.6+deb12u2
+imagemagick-6.q16	8:6.9.11.60+dfsg-1.6+deb12u2
+init-system-helpers	1.65.2
+krb5-multidev:arm64	1.20.1-2+deb12u2
+libacl1:arm64	2.3.1-3
+libaom3:arm64	3.6.0-1+deb12u1
+libapr1:arm64	1.7.2-3+deb12u1
+libaprutil1:arm64	1.6.3-1
+libapt-pkg6.0:arm64	2.6.1
+libasan8:arm64	12.2.0-14
+libassuan0:arm64	2.5.5-5
+libatomic1:arm64	12.2.0-14
+libattr1:arm64	1:2.5.1-4
+libaudit-common	1:3.0.9-1
+libaudit1:arm64	1:3.0.9-1
+libbinutils:arm64	2.40-2
+libblkid-dev:arm64	2.38.1-5+deb12u3
+libblkid1:arm64	2.38.1-5+deb12u3
+libbrotli-dev:arm64	1.0.9-2+b6
+libbrotli1:arm64	1.0.9-2+b6
+libbsd0:arm64	0.11.7-2
+libbz2-1.0:arm64	1.0.8-5+b1
+libbz2-dev:arm64	1.0.8-5+b1
+libc-bin	2.36-9+deb12u10
+libc-dev-bin	2.36-9+deb12u10
+libc6:arm64	2.36-9+deb12u10
+libc6-dev:arm64	2.36-9+deb12u10
+libcairo-gobject2:arm64	1.16.0-7
+libcairo-script-interpreter2:arm64	1.16.0-7
+libcairo2:arm64	1.16.0-7
+libcairo2-dev:arm64	1.16.0-7
+libcap-ng0:arm64	0.8.3-1+b3
+libcap2:arm64	1:2.66-4
+libcbor0.8:arm64	0.8.0-2+b1
+libcc1-0:arm64	12.2.0-14
+libcom-err2:arm64	1.47.0-2
+libcrypt-dev:arm64	1:4.4.33-2
+libcrypt1:arm64	1:4.4.33-2
+libctf-nobfd0:arm64	2.40-2
+libctf0:arm64	2.40-2
+libcurl3-gnutls:arm64	7.88.1-10+deb12u12
+libcurl4:arm64	7.88.1-10+deb12u12
+libcurl4-openssl-dev:arm64	7.88.1-10+deb12u12
+libdatrie1:arm64	0.2.13-2+b1
+libdav1d6:arm64	1.0.0-2+deb12u1
+libdb-dev:arm64	5.3.2
+libdb5.3:arm64	5.3.28+dfsg2-1
+libdb5.3-dev	5.3.28+dfsg2-1
+libde265-0:arm64	1.0.11-1+deb12u2
+libdebconfclient0:arm64	0.270
+libdeflate-dev:arm64	1.14-1
+libdeflate0:arm64	1.14-1
+libdjvulibre-dev:arm64	3.5.28-2+b1
+libdjvulibre-text	3.5.28-2
+libdjvulibre21:arm64	3.5.28-2+b1
+libdpkg-perl	1.21.22
+libedit2:arm64	3.1-20221030-2
+libelf1:arm64	0.188-2.1
+liberror-perl	0.17029-2
+libevent-2.1-7:arm64	2.1.12-stable-8
+libevent-core-2.1-7:arm64	2.1.12-stable-8
+libevent-dev	2.1.12-stable-8
+libevent-extra-2.1-7:arm64	2.1.12-stable-8
+libevent-openssl-2.1-7:arm64	2.1.12-stable-8
+libevent-pthreads-2.1-7:arm64	2.1.12-stable-8
+libexif-dev:arm64	0.6.24-1+b1
+libexif12:arm64	0.6.24-1+b1
+libexpat1:arm64	2.5.0-1+deb12u1
+libexpat1-dev:arm64	2.5.0-1+deb12u1
+libext2fs2:arm64	1.47.0-2
+libffi-dev:arm64	3.4.4-1
+libffi8:arm64	3.4.4-1
+libfftw3-double3:arm64	3.3.10-1
+libfido2-1:arm64	1.12.0-2+b1
+libfontconfig-dev:arm64	2.14.1-4
+libfontconfig1:arm64	2.14.1-4
+libfreetype-dev:arm64	2.12.1+dfsg-5+deb12u4
+libfreetype6:arm64	2.12.1+dfsg-5+deb12u4
+libfreetype6-dev:arm64	2.12.1+dfsg-5+deb12u4
+libfribidi0:arm64	1.0.8-2.1
+libgcc-12-dev:arm64	12.2.0-14
+libgcc-s1:arm64	12.2.0-14
+libgcrypt20:arm64	1.10.1-3
+libgdbm-compat4:arm64	1.23-3
+libgdbm-dev:arm64	1.23-3
+libgdbm6:arm64	1.23-3
+libgdk-pixbuf-2.0-0:arm64	2.42.10+dfsg-1+deb12u1
+libgdk-pixbuf-2.0-dev:arm64	2.42.10+dfsg-1+deb12u1
+libgdk-pixbuf2.0-bin	2.42.10+dfsg-1+deb12u1
+libgdk-pixbuf2.0-common	2.42.10+dfsg-1+deb12u1
+libgirepository-1.0-1:arm64	1.74.0-3
+libglib2.0-0:arm64	2.74.6-2+deb12u5
+libglib2.0-bin	2.74.6-2+deb12u5
+libglib2.0-data	2.74.6-2+deb12u5
+libglib2.0-dev:arm64	2.74.6-2+deb12u5
+libglib2.0-dev-bin	2.74.6-2+deb12u5
+libgmp-dev:arm64	2:6.2.1+dfsg1-1.1
+libgmp10:arm64	2:6.2.1+dfsg1-1.1
+libgmpxx4ldbl:arm64	2:6.2.1+dfsg1-1.1
+libgnutls30:arm64	3.7.9-2+deb12u4
+libgomp1:arm64	12.2.0-14
+libgpg-error0:arm64	1.46-1
+libgprofng0:arm64	2.40-2
+libgraphite2-3:arm64	1.3.14-1
+libgssapi-krb5-2:arm64	1.20.1-2+deb12u2
+libgssrpc4:arm64	1.20.1-2+deb12u2
+libharfbuzz0b:arm64	6.0.0+dfsg-3
+libheif1:arm64	1.15.1-1+deb12u1
+libhogweed6:arm64	3.8.1-2
+libhwasan0:arm64	12.2.0-14
+libice-dev:arm64	2:1.0.10-1
+libice6:arm64	2:1.0.10-1
+libicu-dev:arm64	72.1-3
+libicu72:arm64	72.1-3
+libidn2-0:arm64	2.3.3-1+b1
+libimath-3-1-29:arm64	3.1.6-1
+libimath-dev:arm64	3.1.6-1
+libisl23:arm64	0.25-1.1
+libitm1:arm64	12.2.0-14
+libjansson4:arm64	2.14-2
+libjbig-dev:arm64	2.1-6.1
+libjbig0:arm64	2.1-6.1
+libjpeg-dev:arm64	1:2.1.5-2
+libjpeg62-turbo:arm64	1:2.1.5-2
+libjpeg62-turbo-dev:arm64	1:2.1.5-2
+libk5crypto3:arm64	1.20.1-2+deb12u2
+libkadm5clnt-mit12:arm64	1.20.1-2+deb12u2
+libkadm5srv-mit12:arm64	1.20.1-2+deb12u2
+libkdb5-10:arm64	1.20.1-2+deb12u2
+libkeyutils1:arm64	1.6.3-2
+libkrb5-3:arm64	1.20.1-2+deb12u2
+libkrb5-dev:arm64	1.20.1-2+deb12u2
+libkrb5support0:arm64	1.20.1-2+deb12u2
+libksba8:arm64	1.6.3-2
+liblcms2-2:arm64	2.14-2
+liblcms2-dev:arm64	2.14-2
+libldap-2.5-0:arm64	2.5.13+dfsg-5
+liblerc-dev:arm64	4.0.0+ds-2
+liblerc4:arm64	4.0.0+ds-2
+liblqr-1-0:arm64	0.4.2-2.1
+liblqr-1-0-dev:arm64	0.4.2-2.1
+liblsan0:arm64	12.2.0-14
+libltdl-dev:arm64	2.4.7-7~deb12u1
+libltdl7:arm64	2.4.7-7~deb12u1
+liblz4-1:arm64	1.9.4-1
+liblzma-dev:arm64	5.4.1-0.2
+liblzma5:arm64	5.4.1-0.2
+liblzo2-2:arm64	2.10-2
+libmagic-mgc	1:5.44-3
+libmagic1:arm64	1:5.44-3
+libmagickcore-6-arch-config:arm64	8:6.9.11.60+dfsg-1.6+deb12u2
+libmagickcore-6-headers	8:6.9.11.60+dfsg-1.6+deb12u2
+libmagickcore-6.q16-6:arm64	8:6.9.11.60+dfsg-1.6+deb12u2
+libmagickcore-6.q16-6-extra:arm64	8:6.9.11.60+dfsg-1.6+deb12u2
+libmagickcore-6.q16-dev:arm64	8:6.9.11.60+dfsg-1.6+deb12u2
+libmagickcore-dev	8:6.9.11.60+dfsg-1.6+deb12u2
+libmagickwand-6-headers	8:6.9.11.60+dfsg-1.6+deb12u2
+libmagickwand-6.q16-6:arm64	8:6.9.11.60+dfsg-1.6+deb12u2
+libmagickwand-6.q16-dev:arm64	8:6.9.11.60+dfsg-1.6+deb12u2
+libmagickwand-dev	8:6.9.11.60+dfsg-1.6+deb12u2
+libmariadb-dev	1:10.11.11-0+deb12u1
+libmariadb-dev-compat	1:10.11.11-0+deb12u1
+libmariadb3:arm64	1:10.11.11-0+deb12u1
+libmaxminddb-dev:arm64	1.7.1-1
+libmaxminddb0:arm64	1.7.1-1
+libmd0:arm64	1.0.4-2
+libmount-dev:arm64	2.38.1-5+deb12u3
+libmount1:arm64	2.38.1-5+deb12u3
+libmpc3:arm64	1.3.1-1
+libmpfr6:arm64	4.2.0-1
+libncurses-dev:arm64	6.4-4
+libncurses5-dev:arm64	6.4-4
+libncurses6:arm64	6.4-4
+libncursesw5-dev:arm64	6.4-4
+libncursesw6:arm64	6.4-4
+libnettle8:arm64	3.8.1-2
+libnghttp2-14:arm64	1.52.0-1+deb12u2
+libnpth0:arm64	1.6-3
+libnsl-dev:arm64	1.3.0-2
+libnsl2:arm64	1.3.0-2
+libnuma1:arm64	2.0.16-1
+libopenexr-3-1-30:arm64	3.1.5-5
+libopenexr-dev	3.1.5-5
+libopenjp2-7:arm64	2.5.0-2+deb12u1
+libopenjp2-7-dev:arm64	2.5.0-2+deb12u1
+libp11-kit0:arm64	0.24.1-2
+libpam-modules:arm64	1.5.2-6+deb12u1
+libpam-modules-bin	1.5.2-6+deb12u1
+libpam-runtime	1.5.2-6+deb12u1
+libpam0g:arm64	1.5.2-6+deb12u1
+libpango-1.0-0:arm64	1.50.12+ds-1
+libpangocairo-1.0-0:arm64	1.50.12+ds-1
+libpangoft2-1.0-0:arm64	1.50.12+ds-1
+libpcre2-16-0:arm64	10.42-1
+libpcre2-32-0:arm64	10.42-1
+libpcre2-8-0:arm64	10.42-1
+libpcre2-dev:arm64	10.42-1
+libpcre2-posix3:arm64	10.42-1
+libperl5.36:arm64	5.36.0-7+deb12u1
+libpixman-1-0:arm64	0.42.2-1
+libpixman-1-dev:arm64	0.42.2-1
+libpkgconf3:arm64	1.8.1-1
+libpng-dev:arm64	1.6.39-2
+libpng16-16:arm64	1.6.39-2
+libpq-dev	15.12-0+deb12u2
+libpq5:arm64	15.12-0+deb12u2
+libproc2-0:arm64	2:4.0.2-3
+libpsl5:arm64	0.21.2-1
+libpthread-stubs0-dev:arm64	0.4-1
+libpython3-stdlib:arm64	3.11.2-1+b1
+libpython3.11-minimal:arm64	3.11.2-6+deb12u5
+libpython3.11-stdlib:arm64	3.11.2-6+deb12u5
+libreadline-dev:arm64	8.2-1.3
+libreadline8:arm64	8.2-1.3
+librsvg2-2:arm64	2.54.7+dfsg-1~deb12u1
+librsvg2-common:arm64	2.54.7+dfsg-1~deb12u1
+librsvg2-dev:arm64	2.54.7+dfsg-1~deb12u1
+librtmp1:arm64	2.4+20151223.gitfa8646d.1-2+b2
+libsasl2-2:arm64	2.1.28+dfsg-10
+libsasl2-modules-db:arm64	2.1.28+dfsg-10
+libseccomp2:arm64	2.5.4-1+deb12u1
+libselinux1:arm64	3.4-1+b6
+libselinux1-dev:arm64	3.4-1+b6
+libsemanage-common	3.4-1
+libsemanage2:arm64	3.4-1+b5
+libsepol-dev:arm64	3.4-2.1
+libsepol2:arm64	3.4-2.1
+libserf-1-1:arm64	1.3.9-11
+libsm-dev:arm64	2:1.2.3-1
+libsm6:arm64	2:1.2.3-1
+libsmartcols1:arm64	2.38.1-5+deb12u3
+libsqlite3-0:arm64	3.40.1-2+deb12u1
+libsqlite3-dev:arm64	3.40.1-2+deb12u1
+libss2:arm64	1.47.0-2
+libssh2-1:arm64	1.10.0-3+b1
+libssl-dev:arm64	3.0.15-1~deb12u1
+libssl3:arm64	3.0.15-1~deb12u1
+libstdc++-12-dev:arm64	12.2.0-14
+libstdc++6:arm64	12.2.0-14
+libsvn1:arm64	1.14.2-4+deb12u1
+libsystemd0:arm64	252.36-1~deb12u1
+libtasn1-6:arm64	4.19.0-2+deb12u1
+libthai-data	0.1.29-1
+libthai0:arm64	0.1.29-1
+libtiff-dev:arm64	4.5.0-6+deb12u2
+libtiff6:arm64	4.5.0-6+deb12u2
+libtiffxx6:arm64	4.5.0-6+deb12u2
+libtinfo6:arm64	6.4-4
+libtirpc-common	1.3.3+ds-1
+libtirpc-dev:arm64	1.3.3+ds-1
+libtirpc3:arm64	1.3.3+ds-1
+libtool	2.4.7-7~deb12u1
+libtsan2:arm64	12.2.0-14
+libubsan1:arm64	12.2.0-14
+libudev1:arm64	252.36-1~deb12u1
+libunistring2:arm64	1.0-2
+libutf8proc2:arm64	2.8.0-1
+libuuid1:arm64	2.38.1-5+deb12u3
+libwebp-dev:arm64	1.2.4-0.2+deb12u1
+libwebp7:arm64	1.2.4-0.2+deb12u1
+libwebpdemux2:arm64	1.2.4-0.2+deb12u1
+libwebpmux3:arm64	1.2.4-0.2+deb12u1
+libwmf-0.2-7:arm64	0.2.12-5.1
+libwmf-dev	0.2.12-5.1
+libwmflite-0.2-7:arm64	0.2.12-5.1
+libx11-6:arm64	2:1.8.4-2+deb12u2
+libx11-data	2:1.8.4-2+deb12u2
+libx11-dev:arm64	2:1.8.4-2+deb12u2
+libx265-199:arm64	3.5-2+b1
+libxau-dev:arm64	1:1.0.9-1
+libxau6:arm64	1:1.0.9-1
+libxcb-render0:arm64	1.15-1
+libxcb-render0-dev:arm64	1.15-1
+libxcb-shm0:arm64	1.15-1
+libxcb-shm0-dev:arm64	1.15-1
+libxcb1:arm64	1.15-1
+libxcb1-dev:arm64	1.15-1
+libxdmcp-dev:arm64	1:1.1.2-3
+libxdmcp6:arm64	1:1.1.2-3
+libxext-dev:arm64	2:1.3.4-1+b1
+libxext6:arm64	2:1.3.4-1+b1
+libxml2:arm64	2.9.14+dfsg-1.3~deb12u1
+libxml2-dev:arm64	2.9.14+dfsg-1.3~deb12u1
+libxrender-dev:arm64	1:0.9.10-1.1
+libxrender1:arm64	1:0.9.10-1.1
+libxslt1-dev:arm64	1.1.35-1
+libxslt1.1:arm64	1.1.35-1
+libxt-dev:arm64	1:1.2.1-1.1
+libxt6:arm64	1:1.2.1-1.1
+libxxhash0:arm64	0.8.1-1
+libyaml-0-2:arm64	0.2.5-1
+libyaml-dev:arm64	0.2.5-1
+libzstd-dev:arm64	1.5.4+dfsg2-5
+libzstd1:arm64	1.5.4+dfsg2-5
+linux-libc-dev:arm64	6.1.129-1
+login	1:4.13+dfsg1-1+b1
+logsave	1.47.0-2
+m4	1.4.19-3
+make	4.3-4.1
+mariadb-common	1:10.11.11-0+deb12u1
+mawk	1.3.4.20200120-3.1
+media-types	10.0.0
+mercurial	6.3.2-1
+mercurial-common	6.3.2-1
+mount	2.38.1-5+deb12u3
+mysql-common	5.8+1.1.0
+ncurses-base	6.4-4
+ncurses-bin	6.4-4
+netbase	6.4
+openssh-client	1:9.2p1-2+deb12u5
+openssl	3.0.15-1~deb12u1
+passwd	1:4.13+dfsg1-1+b1
+patch	2.7.6-7
+perl	5.36.0-7+deb12u1
+perl-base	5.36.0-7+deb12u1
+perl-modules-5.36	5.36.0-7+deb12u1
+pinentry-curses	1.2.1-1
+pkg-config:arm64	1.8.1-1
+pkgconf:arm64	1.8.1-1
+pkgconf-bin	1.8.1-1
+procps	2:4.0.2-3
+python3	3.11.2-1+b1
+python3-distutils	3.11.2-3
+python3-lib2to3	3.11.2-3
+python3-minimal	3.11.2-1+b1
+python3.11	3.11.2-6+deb12u5
+python3.11-minimal	3.11.2-6+deb12u5
+readline-common	8.2-1.3
+rpcsvc-proto	1.4.3-1
+sed	4.9-1
+sensible-utils	0.0.17+nmu1
+shared-mime-info	2.2-1
+sq	0.27.0-2+b1
+subversion	1.14.2-4+deb12u1
+sysvinit-utils	3.06-4
+tar	1.34+dfsg-1.2+deb12u1
+tzdata	2025a-0+deb12u1
+ucf	3.0043+nmu1+deb12u1
+unzip	6.0-28
+usr-is-merged	37~deb12u1
+util-linux	2.38.1-5+deb12u3
+util-linux-extra	2.38.1-5+deb12u3
+uuid-dev:arm64	2.38.1-5+deb12u3
+wget	1.21.3-1+deb12u1
+x11-common	1:7.7+23
+x11proto-core-dev	2022.1-1
+x11proto-dev	2022.1-1
+xorg-sgml-doctools	1:1.11-1.1
+xtrans-dev	1.4.0-1
+xz-utils	5.4.1-0.2
+zlib1g:arm64	1:1.2.13.dfsg-1
+zlib1g-dev:arm64	1:1.2.13.dfsg-1
+e649f299e578123b51ba89f3df2633cfaa868a605ae11d09c6f0be587e4c33d0  Cargo.lock
+53d01dc157ffd94452e8f28ea1dc0631621186132604ee18d00ba9b57c400261  /verify/probe.rs
+426bacabe9ce78735b980fb8796c4c08246bcf476ac92067fa277f0d6cc20e42  /verify/verify.sh
+=== PINNED CARGO DEPENDENCIES ===
+# This file is automatically @generated by Cargo.
+# It is not intended for manual editing.
+version = 4
+
+[[package]]
+name = "ariadne"
+version = "0.1.0"
+dependencies = [
+ "sha2",
+]
+
+[[package]]
+name = "block-buffer"
+version = "0.10.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3078c7629b62d3f0439517fa394996acacc5cbc91c5a20d8c658e77abd503a71"
+dependencies = [
+ "generic-array",
+]
+
+[[package]]
+name = "cfg-if"
+version = "1.0.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e7648175b45a9a48536d676f68d918270699102aa8dab5496df06904c914600"
+
+[[package]]
+name = "cpufeatures"
+version = "0.2.17"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "59ed5838eebb26a2bb2e58f6d5b5316989ae9d08bab10e0e6d103e656d1b0280"
+dependencies = [
+ "libc",
+]
+
+[[package]]
+name = "crypto-common"
+version = "0.1.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "78c8292055d1c1df0cce5d180393dc8cce0abec0a7102adb6c7b1eef6016d60a"
+dependencies = [
+ "generic-array",
+ "typenum",
+]
+
+[[package]]
+name = "digest"
+version = "0.10.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
+dependencies = [
+ "block-buffer",
+ "crypto-common",
+]
+
+[[package]]
+name = "generic-array"
+version = "0.14.7"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "85649ca51fd72272d7821adaf274ad91c288277713d9c18820d8499a7ff69e9a"
+dependencies = [
+ "typenum",
+ "version_check",
+]
+
+[[package]]
+name = "libc"
+version = "0.2.191"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65cd87c9a6d60536580b316ad985726104730a5151c99845f2490428ef91240a"
+
+[[package]]
+name = "sha2"
+version = "0.10.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283"
+dependencies = [
+ "cfg-if",
+ "cpufeatures",
+ "digest",
+]
+
+[[package]]
+name = "typenum"
+version = "1.20.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "b6f5e870be6c3b371b77fe0ee0bafb859fa4964b4404c27de1d380043c4dda20"
+
+[[package]]
+name = "version_check"
+version = "0.9.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
+=== BLOCK 1: NEGATIVE/POSITIVE GATE ===
+NEGATIVE extra payload key: Err(Protocol)
+POSITIVE generated memory run: Ok((72000, 40000))
+GATE negative rejected / positive accepted: PASS
+BLOCK1_EXIT=0
+=== BLOCK 2: SINGLE E2E L0 THROUGH L6 ===
+FAIL: no tracked unified L0-L6 scenario exists. Suite is not substituted for an E2E execution.
+Law L6.4 makes L1-L5 use optional; no signed cross-level scenario parameters supplied. No new scenario invented.
+tests/l0_c1_genesis.rs
+tests/l0_cycle.rs
+tests/l0_event_log.rs
+tests/l0_l1_l2_pipeline.rs
+tests/l0_n3_canonical_string.rs
+tests/l0_n3_line_canonical.rs
+tests/l0_prng.rs
+tests/l0_replay_process.rs
+tests/l0_state.rs
+tests/l1_view.rs
+tests/l2_selection.rs
+tests/l3_memory.rs
+tests/l4_identity.rs
+tests/l5_social.rs
+tests/l6_protocol.rs
+tests/l6_valuation.rs
+=== BLOCK 3: R1/R2 CODE EVIDENCE ===
+Scope explicitly identified from reports/compact_review_l0_l3_b2770bd.md: L2 R1 and R2.
+commit 610b43ce57a13234c9e54b7d58967d9d0ff45577
+Author:     Alessandro Spinabelli <Alessandro.spinabelli@studenti.unipr.it>
+AuthorDate: Sat Oct 31 20:51:29 2026 +0100
+Commit:     Alessandro Spinabelli <Alessandro.spinabelli@studenti.unipr.it>
+CommitDate: Sat Oct 31 20:51:29 2026 +0100
+
+    fix L2 event-local edge activation and require config
+    
+    «autorizzo il fix col percorso consueto test-first, voglio un caso multi-arco», 31/10/2026; emendamento L2.27 (51e69f6). Nessuna nuova dipendenza.
+
+diff --git a/src/selection.rs b/src/selection.rs
+index c55716b..306555a 100644
+--- a/src/selection.rs
++++ b/src/selection.rs
+@@ -1,6 +1,6 @@
+ //! Deterministic L2 selection replay. The log and L1 view are read-only inputs.
+ use std::collections::{BTreeMap,BTreeSet};
+-use crate::{EventType,Log,Value};
++use crate::{Log,Value};
+ use crate::view;
+ 
+ #[derive(Clone,Debug,PartialEq,Eq)]
+@@ -16,13 +16,39 @@ fn arr_seq(s:&str)->Result<Vec<u64>,L2Error>{if s=="[]"{return Ok(vec![])} if !s
+ fn allowed(e:&crate::Event,tag:&str)->Result<(),L2Error>{let canonical=e.payload.canonical();let extras:Vec<&str>=canonical.trim_matches(|c|c=='{'||c=='}').split(',').filter_map(|m|m.split_once(':').map(|x|x.0.trim_matches('"'))).filter(|k|*k!="l2"&&match tag{"config"=>!matches!(*k,"k"|"tau"),"select"=>!matches!(*k,"at"|"ups"|"downs"),"summary"=>!matches!(*k,"expulsions"|"text"),"barrier"=>*k!="phase",_=>true}).collect();if extras.is_empty(){Ok(())}else{Err(L2Error::Schema)}}
+ fn parse_nodes(v:&Value)->Result<Vec<(String,String)>,L2Error>{let s=match v{Value::Str(s)=>s,_=>return Err(L2Error::Schema)};if s=="[]"{return Ok(vec![])} let mut out=vec![];for x in s.trim_matches(|c|c=='['||c==']').split("},{"){let x=x.trim_matches(|c|c=='{'||c=='}');let mut k=None;let mut kind=None;for p in x.split(','){let(a,b)=p.split_once(':').ok_or(L2Error::Schema)?;let val=b.trim_matches('"').to_string();match a{"\"key\""=>k=Some(val),"\"kind\""=>kind=Some(val),_=>return Err(L2Error::Schema)}}out.push((kind.ok_or(L2Error::Schema)?,k.ok_or(L2Error::Schema)?));}Ok(out)}
+ fn id(kind:&str,key:&str)->String{use sha2::{Digest,Sha256};let src=format!("{{\"key\":\"{key}\",\"kind\":\"{kind}\"}}");Sha256::digest(src.as_bytes()).iter().map(|b|format!("{b:02x}")).collect()}
++// L1 has already validated canonical F1. Keep JSON string tokens intact so
++// escaped characters are compared using the same canonical encoder as L1.
++fn edge_mentions(v:&Value,view:&view::View)->Result<Vec<(String,u64)>,L2Error>{
++ let s=match v{Value::Str(s)=>s,_=>return Err(L2Error::Schema)};
++ let bytes=s.as_bytes();let mut tokens=Vec::new();let mut pos=0;
++ while pos<bytes.len(){
++  if bytes[pos]!=b'"'{pos+=1;continue}
++  let start=pos;pos+=1;
++  while pos<bytes.len() && bytes[pos]!=b'"'{if bytes[pos]==b'\\'{pos+=1;}pos+=1;}
++  if pos>=bytes.len(){return Err(L2Error::Schema)}
++  pos+=1;tokens.push(&s[start..pos]);
++ }
++ if tokens.len()%10!=0{return Err(L2Error::Schema)}
++ let mut out=Vec::new();
++ for edge in tokens.chunks_exact(10){
++  for (key,kind) in [(edge[1],edge[3]),(edge[7],edge[9])]{
++   let n=view.nodes.iter().find(|n|{
++    let mut k=String::new();let mut t=String::new();
++    crate::payload::write_escaped(&mut k,&n.key);crate::payload::write_escaped(&mut t,&n.kind);
++    k==key && t==kind
++   }).ok_or(L2Error::Schema)?;
++   out.push((n.id.clone(),n.origin_seq));
++  }
++ }
++ Ok(out)
++}
+ fn replay(log:&Log,emit:bool,cutoff:u64)->Result<(ActiveSet,Vec<Decision>),L2Error>{let view=view::build(log).map_err(|_|L2Error::Schema)?;if view.head_hash!=log.events().last().ok_or(L2Error::HeadMatch)?.hash{return Err(L2Error::HeadMatch)}
+   let mut config:Option<(u64,u64)>=None;let mut activations:BTreeMap<String,Vec<u64>>=BTreeMap::new();let mut origin_map:BTreeMap<String,u64>=BTreeMap::new();let mut active=BTreeSet::new();let mut decisions=vec![];let mut barrier=false;let mut expulsions=BTreeSet::new();let mut expelled_ids=BTreeSet::new();let mut window_has_summary=false;
+  for e in log.events(){let lv=e.payload.get("l2");if let Some(v)=lv{let tag=match v{Value::Str(s)=>s.as_str(),_=>return Err(L2Error::Schema)};if !matches!(tag,"config"|"select"|"summary"|"barrier"){return Err(L2Error::Schema)}allowed(e,tag)?;match tag{"config"=>{let k=intv(e,"k").map_err(|_|L2Error::Config)?;let tau=intv(e,"tau").map_err(|_|L2Error::Config)?;if k<0||tau<1{return Err(L2Error::Config)}config=Some((k as u64,tau as u64));},"select"=>{
+    let downs=arr_seq(strv(e,"downs")?)?;
+    if barrier {
+     let at=match e.payload.get("at"){Some(Value::Int(n))=>u64::try_from(*n).map_err(|_|L2Error::Schema)?,_=>return Err(L2Error::Schema)};
+-    let tau=config.map(|x|x.1).unwrap_or(1);
++     let tau=config.ok_or(L2Error::Config)?.1;
+     let score=|i:&String|->u64{activations.get(i).into_iter().flatten().map(|seq|(1u64<<24)>>((at.saturating_sub(*seq)/tau).min(24))).sum()};
+     let mut ranked:Vec<String>=active.iter().cloned().collect();
+     ranked.sort_by(|a,b|score(a).cmp(&score(b)).then_with(||origin_map[b].cmp(&origin_map[a])).then_with(||b.cmp(a)));
+@@ -38,7 +64,7 @@ fn replay(log:&Log,emit:bool,cutoff:u64)->Result<(ActiveSet,Vec<Decision>),L2Err
+    expulsions.clear();expelled_ids.clear();window_has_summary=false;
+   }
+   let mut mentioned=vec![];if let Some(v)=e.payload.get("nodes"){for(kind,key)in parse_nodes(v)?{let i=id(&kind,&key);let origin=view.nodes.iter().find(|n|n.id==i).map(|n|n.origin_seq).unwrap_or(e.seq);origin_map.insert(i.clone(),origin);mentioned.push((i,origin));}}
+- if e.payload.get("edges").is_some(){for edge in &view.edges{for i in [&edge.src_id,&edge.dst_id]{let n=view.nodes.iter().find(|n|&n.id==i).ok_or(L2Error::Schema)?;mentioned.push((i.clone(),n.origin_seq));}}}
++  if let Some(v)=e.payload.get("edges"){mentioned.extend(edge_mentions(v,&view)?);}
+  mentioned.sort();mentioned.dedup_by(|a,b|a.0==b.0);for(i,_)in &mentioned{activations.entry(i.clone()).or_default().push(e.seq)}
+  if !mentioned.is_empty(){let(k,tau)=config.ok_or(L2Error::Config)?;let old=active.clone();for(i,origin)in &mentioned{origin_map.insert(i.clone(),*origin);active.insert(i.clone());}let score=|id:&String|->u64{activations.get(id).into_iter().flatten().map(|s|(1u64<<24)>>(((e.seq-*s)/tau).min(24))).sum()};let mut downs=Vec::new();while active.len()>k as usize{let loser=active.iter().min_by(|a,b|score(a).cmp(&score(b)).then_with(||origin_map[*b].cmp(&origin_map[*a])).then_with(||b.cmp(a))).unwrap().clone();active.remove(&loser);let origin=origin_map[&loser];downs.push(origin);if barrier && (!emit || e.seq>cutoff){expulsions.insert(origin);expelled_ids.insert(loser);}}let ups:Vec<u64>=active.difference(&old).filter_map(|i|origin_map.get(i).copied()).collect();downs.sort_unstable();if !ups.is_empty()||!downs.is_empty(){decisions.push(Decision::Select{at:e.seq,tick:e.tick,ups,downs});}}
+  }
+
+SOURCE REPORT
+# Re-review fix L2 R1/R2/R4 — revisione 610b43c
+
+- **Revisione Git:** `610b43ce57a13234c9e54b7d58967d9d0ff45577` (= `610b43c`). `git rev-parse HEAD` negato dalla sandbox (permission denied, come già al gate); HEAD confermato con lettura di `.git/refs/heads/main`. `git log --oneline -7`: cima = `610b43c` → `51e69f6` (legge L2.27) → `6cdf7b4` (test) → `2a9e18e` (base E3).
+- **modello:** `opencode/glm-5.3-flash-free` (classe `light`, nessuna variante: default del catalogo; assegnato dal Router, policy `.opencode/routing.md` v1 ATTIVA 31/10/2026). Session ID Mnemosyne (`memory_open_session`, progetto `opencode:Ariadne`): `ses_803e2cc6-da24-426c-b0eb-6dfd42ca98b4`, chiusa a fine audit. L'ID della sessione runtime OpenCode non è esposto a quest'agente da alcuno strumento disponibile: dichiarata la mancanza, non stimato l'id.
+- **Gate tester (precondizione, stessa revisione 610b43c):** VERDE — `reports/gate_fix_l2_r1_r2.md` (tester `opencode/deepseek-v4.1-flash-free`, ses_34f1cbab): 122/122 debug + 122/122 release, tre test verdi, perimetro ok, sha256 policy/file. Schema SHA-256 policy citato dal gate `bf298cb7…c46a177`: **non ricalcolato da me** (shell limitata a letture Git).
+- **Memorie esaminate (Mnemosyne):** via `memory_context`: `mem_8c87fe0c-133d-4715-9681-4dbcae9f6b0b` (legge L3, richiama il conteggio per-evento L2.3/L2.13 — coerente col fix, nessun conflitto), `mem_f1b05e04-85bc-4a91-b506-3a2f7ec8293a` (E1/E2, non toccate da questo fix). `memory_list_conflicts`: nessun conflitto irrisolto. `memory_pending_review`: 1 proposta pendente `mem_616ad586-4307-48c3-9594-ee1c28b3bb52` (episode del ciclo compatto su b2770bd con i rilievi R1–R4 qui sopra; in attesa di decisione umana/orchestratore, non la tipo).
+- **Non eseguiti test; solo letture (git diff/show/log negati solo per `rev-parse`/`status`, ok per diff/show/log/read).**
+
+## Verdetto: **CONFORME**
+
+## R1 — CHIUSO
+- Il ciclo su `view.edges` è sparito: il diff `6cdf7b4→610b43c` sostituisce `if e.payload.get("edges").is_some(){for edge in &view.edges{…}}` con `if let Some(v)=e.payload.get("edges"){mentioned.extend(edge_mentions(v,&view)?);}` (`src/selection.rs:67`, era riga 41). Grep confermato: nessuna occorrenza di `view.edges` in `src/selection.rs`; l'unico `for edge` residuo è la tokenizzazione del payload dell'evento (`src/selection.rs:33`, `tokens.chunks_exact(10)`).
+- Attivazione **solo** degli archi dichiarati nell'evento stesso: `edge_mentions` legge l'array `edges` del payload corrente (`src/selection.rs:21-44`) e gli endpoint di quell'evento sono gli unici menzionati; attivazione pushata a `e.seq` per evento, dedup dentro lo stesso evento (`src/selection.rs:68`, `mentioned.dedup_by(|a,b|a.0==b.0)`) — L2.13 righe 79-84.
+- Mapping endpoint→id vista con errore per non mappabili: `…find(…).ok_or(L2Error::Schema)?` (`src/selection.rs:35-39`) — Schema, come richiesto; identità = id L1 canonico (confronto con encoder canonico di escape, `src/selection.rs:19-20,36-38`).
+- Test multi-arco: `distinct_edge_events_activate_only_their_own_endpoints` (`tests/l2_selection.rs:166-175`) VERDE al gate; sotto la vecchia semantica l'evento seq 4 (C–D) avrebbe attivato anche A–B e il test cadrebbe → il test discrimina davvero.
+
+## Punto 2 — L2.27 applicata effettivamente (non per caso residuo)
+La legge L2.27 (`notes/L2_legge_selezione.md:210-238`, firmata «Lettura A — L2.3/L2.13») vince: ogni evento che dichiara l'arco (originale o riprova) attiva gli endpoint di **quell'evento** a seq dell'evento. Il meccanismo nuovo è l'estrazione per-evento dal payload (`src/selection.rs:44,67`), non il vecchio ciclo sulla vista: la riprova attiva perché ogni evento riprovato produce `mentioned` propri → attivazione con `seq=dell'evento` (`src/selection.rs:68`).
+- Test di riprova `repeated_edge_reactivates_endpoints_on_each_event` (`tests/l2_selection.rs:186-196`, arco A→B riprovato a seq 3 e 4, attesi `Select{at:3,tick:2,downs:[2,2]}` e `{at:4,tick:3,…}`): passa **soltanto** perché l'estrazione per-evento dal payload è in atto (e non dal ciclo residuo sulla vista); il vecchio ciclo lo avrebbe fatto passare per caso residuo (vista con un solo arco), ma è il test multi-arco (sopra) a escludere la semantica vecchia. Insieme fissano "ogni evento che dichiara l'arco è anch'esso una menzione" — semantica voluta da L2.27, non accidentale.
+- Attenzione all'ordine: i `downs=[2,2]` sono le `origin_seq` L1 dei nodi A e B (dichiarati a seq 2), l'attivazione avviene invece alle seq dell'evento (3 e 4): coerente con la distinzione L2.27 tra regola d'identità/origin (D18, righe 222-225) e regola d'attivazione.
+
+## R2 — CHIUSO
+- `let tau=config.map(|x|x.1).unwrap_or(1)` eliminato; sostituito in finestra da `let tau=config.ok_or(L2Error::Config)?.1;` (`src/selection.rs:51`). Config mancante al ramo valutativo su menzioni → `config.ok_or(L2Error::Config)?` (`src/selection.rs:69`). Grep: nessun residuo `unwrap_or` su config; gli altri `unwrap_or` sono la provenienza fallback dei nodi già presente pre-fix (`src/selection.rs:66`, fuori da questo rilievo) e la selezione del cutoff (`:73`).
+- Test: `in_window_select_without_config_is_error` (`tests/l2_selection.rs:178-183`, barrier senza config + select in finestra con `downs`) → `L2Error::Config`, VERDE al gate. Conforme a L2.2 (`notes/L2_legge_selezione.md:14-17`: errore, mai default impliciti).
+
+## R4 — CHIUSO
+- Diff: `-use crate::{EventType,Log,Value};` → `use crate::{Log,Value};` (`src/selection.rs:3`); grep su `src/selection.rs`: zero occorrenze di `EventType` — rimosso davvero, non commentato. `EventType` resta legittimamente usato dai test (`tests/l2_selection.rs:1,5`).
+
+## Punto 5 — coerenza L3 e API
+- `git diff 2a9e18e..HEAD -- src/memory.rs`: **output vuoto** → `src/memory.rs` invariato in tutto l'arco del mandato; la coerenza con L3.3 (conteggio per eventi distinti) era già conforme e L2.27 la preserva (`notes/L2_legge_selezione.md:231-234`).
+- API pubblica di selection invariate e conformi a L2.20 (`notes/L2_legge_selezione.md:123-129`): `ActiveSet`, `Decision`, `build_active`, `evaluate`, `encode`, `L2Error` mantengono le stesse firme (il diff tocca un `use`, aggiunge la fn privata `edge_mentions` e riscrive le due linee interne; nessuna firma `pub` mutata).
+- Perimetro `git diff --stat 2a9e18e..HEAD`: solo `notes/L2_legge_selezione.md` (+32), `src/selection.rs` (+32/−3), `tests/l2_selection.rs` (+33). Nessuna area già chiusa toccata: **E1, preimage, archiviazione futura, provenienza sono non toccati** e non riaperti in questo audit.
+
+## Ordine dei commit
+`6cdf7b4` = solo `tests/l2_selection.rs` (+20), messaggio con autorizzazione umana «autorizzo il fix col percorso consueto test-first, voglio un caso multi-arco», nessuno stub/production code → conforme. `610b43c` = fix + test di riprova (+13) insieme: ammesso dalle righe 235-238 di L2.27, che fissano i due test come pin di non-regressione che «accompagna il fix R1», e dichiarato dal mandato — legalmente coperto, non violazione del test-first.
+
+## Rilievi (in ordine di gravità: 2, nessuno bloccante)
+1. **MINORE (procedurale, non di codice).** Nessuna prova del rosso a runtime su `6cdf7b4`: il gate la dichiara **ricostruita staticamente** dal diff (`reports/gate_fix_l2_r1_r2.md:131`, limitazione 3), non rieseguita. Coerente con i mandati passati, ma resta un'evidenza ricostruttiva: se si vuole chiudere a runtime servirrebbe `git worktree add <scratch> 6cdf7b4` + run (già descritto dal tester), su nuovo mandato.
+2. **MINORE (documento, fuori dalla revisione).** Working tree con `BLOCKER.md` cancellato e non committato (` D`, dal gate `reports/gate_fix_l2_r1_r2.md:106`): nota, non incide sul codice auditato (la revisione git è invariata), resta da sanare da chi ne ha titolo.
+
+## Limitazioni
+1. Nessun test eseguito (fuori competenza): il gate tester verde sulla medesima revisione è assunto come precondizione.
+2. `git rev-parse HEAD` e `git status --porcelain` negati dalla sandbox: hash di HEAD confermato via `.git/refs/heads/main`; working tree non confrontato integrale con HEAD (letture Git per diff/show/log permesse).
+3. SHA-256 di policy e file citati dal gate non ricalcolati indipendentemente.
+4. Sessione Mnemosyne di audit aperta e chiusa; nessuna proposta di memoria fatta e nessuna decisione di review emessa (competenza dell'orchestratore).
+
+Nessuna accettazione di livello dichiarata: la firma resta umana.
+    19	// L1 has already validated canonical F1. Keep JSON string tokens intact so
+    20	// escaped characters are compared using the same canonical encoder as L1.
+    21	fn edge_mentions(v:&Value,view:&view::View)->Result<Vec<(String,u64)>,L2Error>{
+    22	 let s=match v{Value::Str(s)=>s,_=>return Err(L2Error::Schema)};
+    23	 let bytes=s.as_bytes();let mut tokens=Vec::new();let mut pos=0;
+    24	 while pos<bytes.len(){
+    25	  if bytes[pos]!=b'"'{pos+=1;continue}
+    26	  let start=pos;pos+=1;
+    27	  while pos<bytes.len() && bytes[pos]!=b'"'{if bytes[pos]==b'\\'{pos+=1;}pos+=1;}
+    28	  if pos>=bytes.len(){return Err(L2Error::Schema)}
+    29	  pos+=1;tokens.push(&s[start..pos]);
+    30	 }
+    31	 if tokens.len()%10!=0{return Err(L2Error::Schema)}
+    32	 let mut out=Vec::new();
+    33	 for edge in tokens.chunks_exact(10){
+    34	  for (key,kind) in [(edge[1],edge[3]),(edge[7],edge[9])]{
+    35	   let n=view.nodes.iter().find(|n|{
+    36	    let mut k=String::new();let mut t=String::new();
+    37	    crate::payload::write_escaped(&mut k,&n.key);crate::payload::write_escaped(&mut t,&n.kind);
+    38	    k==key && t==kind
+    39	   }).ok_or(L2Error::Schema)?;
+    40	   out.push((n.id.clone(),n.origin_seq));
+    41	  }
+    42	 }
+    43	 Ok(out)
+    44	}
+    45	fn replay(log:&Log,emit:bool,cutoff:u64)->Result<(ActiveSet,Vec<Decision>),L2Error>{let view=view::build(log).map_err(|_|L2Error::Schema)?;if view.head_hash!=log.events().last().ok_or(L2Error::HeadMatch)?.hash{return Err(L2Error::HeadMatch)}
+    46	  let mut config:Option<(u64,u64)>=None;let mut activations:BTreeMap<String,Vec<u64>>=BTreeMap::new();let mut origin_map:BTreeMap<String,u64>=BTreeMap::new();let mut active=BTreeSet::new();let mut decisions=vec![];let mut barrier=false;let mut expulsions=BTreeSet::new();let mut expelled_ids=BTreeSet::new();let mut window_has_summary=false;
+    47	 for e in log.events(){let lv=e.payload.get("l2");if let Some(v)=lv{let tag=match v{Value::Str(s)=>s.as_str(),_=>return Err(L2Error::Schema)};if !matches!(tag,"config"|"select"|"summary"|"barrier"){return Err(L2Error::Schema)}allowed(e,tag)?;match tag{"config"=>{let k=intv(e,"k").map_err(|_|L2Error::Config)?;let tau=intv(e,"tau").map_err(|_|L2Error::Config)?;if k<0||tau<1{return Err(L2Error::Config)}config=Some((k as u64,tau as u64));},"select"=>{
+    48	   let downs=arr_seq(strv(e,"downs")?)?;
+    49	   if barrier {
+    50	    let at=match e.payload.get("at"){Some(Value::Int(n))=>u64::try_from(*n).map_err(|_|L2Error::Schema)?,_=>return Err(L2Error::Schema)};
+    51	     let tau=config.ok_or(L2Error::Config)?.1;
+    52	    let score=|i:&String|->u64{activations.get(i).into_iter().flatten().map(|seq|(1u64<<24)>>((at.saturating_sub(*seq)/tau).min(24))).sum()};
+    53	    let mut ranked:Vec<String>=active.iter().cloned().collect();
+    54	    ranked.sort_by(|a,b|score(a).cmp(&score(b)).then_with(||origin_map[b].cmp(&origin_map[a])).then_with(||b.cmp(a)));
+    55	     for origin in downs {if let Some(pos)=ranked.iter().position(|i|origin_map.get(i)==Some(&origin)){let i=ranked.remove(pos);expulsions.insert(origin);expelled_ids.insert(i.clone());active.remove(&i);}}
+    56	   }
+    57	   let ups=arr_seq(strv(e,"ups")?)?;
+    58	   for origin in ups {for n in view.nodes.iter().filter(|n|n.origin_seq==origin){active.insert(n.id.clone());origin_map.insert(n.id.clone(),origin);}}
+    59	  },"summary"=>{if barrier {window_has_summary=true;}},"barrier"=>{let phase=e.payload.get("phase");if let Some(v)=phase{if v!=&Value::Str("close".into()){return Err(L2Error::Barrier)}if !barrier{return Err(L2Error::Barrier)}barrier=false;if !window_has_summary && !expulsions.is_empty() && e.seq > cutoff {let mut ids_sorted:Vec<String>=expelled_ids.iter().cloned().collect();ids_sorted.sort();decisions.push(Decision::Summary{expulsions:expulsions.iter().copied().collect(),text:ids_sorted.join("|")});}expulsions.clear();expelled_ids.clear();window_has_summary=false;}else{if barrier{return Err(L2Error::Barrier)}barrier=true;expulsions.clear();expelled_ids.clear();window_has_summary=false;}}_=>unreachable!()};continue}
+    60	
+    61	  if barrier {
+    62	   barrier=false;
+    63	   if !window_has_summary && !expulsions.is_empty() && e.seq>cutoff {let mut ids_sorted:Vec<String>=expelled_ids.iter().cloned().collect();ids_sorted.sort();decisions.push(Decision::Summary{expulsions:expulsions.iter().copied().collect(),text:ids_sorted.join("|")});}
+    64	   expulsions.clear();expelled_ids.clear();window_has_summary=false;
+    65	  }
+    66	  let mut mentioned=vec![];if let Some(v)=e.payload.get("nodes"){for(kind,key)in parse_nodes(v)?{let i=id(&kind,&key);let origin=view.nodes.iter().find(|n|n.id==i).map(|n|n.origin_seq).unwrap_or(e.seq);origin_map.insert(i.clone(),origin);mentioned.push((i,origin));}}
+    67	  if let Some(v)=e.payload.get("edges"){mentioned.extend(edge_mentions(v,&view)?);}
+    68	 mentioned.sort();mentioned.dedup_by(|a,b|a.0==b.0);for(i,_)in &mentioned{activations.entry(i.clone()).or_default().push(e.seq)}
+    69	 if !mentioned.is_empty(){let(k,tau)=config.ok_or(L2Error::Config)?;let old=active.clone();for(i,origin)in &mentioned{origin_map.insert(i.clone(),*origin);active.insert(i.clone());}let score=|id:&String|->u64{activations.get(id).into_iter().flatten().map(|s|(1u64<<24)>>(((e.seq-*s)/tau).min(24))).sum()};let mut downs=Vec::new();while active.len()>k as usize{let loser=active.iter().min_by(|a,b|score(a).cmp(&score(b)).then_with(||origin_map[*b].cmp(&origin_map[*a])).then_with(||b.cmp(a))).unwrap().clone();active.remove(&loser);let origin=origin_map[&loser];downs.push(origin);if barrier && (!emit || e.seq>cutoff){expulsions.insert(origin);expelled_ids.insert(loser);}}let ups:Vec<u64>=active.difference(&old).filter_map(|i|origin_map.get(i).copied()).collect();downs.sort_unstable();if !ups.is_empty()||!downs.is_empty(){decisions.push(Decision::Select{at:e.seq,tick:e.tick,ups,downs});}}
+  if let Some(v)=e.payload.get("edges"){mentioned.extend(edge_mentions(v,&view)?);}
+     let tau=config.ok_or(L2Error::Config)?.1;
+BLOCK3_CODE_CHECK_EXIT=0
+=== BLOCK 4: L6 CORPUS 1000-1099 ===
+Timeout=5 seconds per pair (signed law L6.11); externally enforced with GNU timeout, SIGKILL. Startup included. No retries or seed exclusions.
+timeout (GNU coreutils) 9.1
+Copyright (C) 2022 Free Software Foundation, Inc.
+License GPLv3+: GNU GPL version 3 or later <https://gnu.org/licenses/gpl.html>.
+This is free software: you are free to change and redistribute it.
+There is NO WARRANTY, to the extent permitted by law.
+
+Written by Padraig Brady.
+seed=1000 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1000 arm=memoria events=361 head_hash=2d588afd7dce7a4c1f354888a9744880dffa2f05ddea3369d9f296c8d162df34
+seed=1000 arm=controllo events=361 head_hash=f09d7f6a17aec3243f4a64992c5455e6f9fb5b53b1f96ca2058f2e648fcff004
+DIFF 675
+seed=1000 exit=0
+seed=1001 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1001 arm=memoria events=361 head_hash=988783455c53cef7a149e4f83964e2c6b42b54f20571d078a5a1af3aadd71c8b
+seed=1001 arm=controllo events=361 head_hash=a5c8e800a7dca63207bd6a9beebda69272958099d42cd61506e77d2f75f945c0
+DIFF 675
+seed=1001 exit=0
+seed=1002 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1002 arm=memoria events=361 head_hash=0fd2949ac241749b5d5a49fd9a8db6f737c40d4f7a43d2959e67a9e8f4afdf7d
+seed=1002 arm=controllo events=361 head_hash=f56f03688a10a8086685e87a91d435a7d1d7d6e7d5e0fb2017478d8e91809e89
+DIFF 675
+seed=1002 exit=0
+seed=1003 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1003 arm=memoria events=361 head_hash=0edb5c7c0e77cbeb8e0e827a2794fc17aaef67e88e2716ca839bf4c6035d4144
+seed=1003 arm=controllo events=361 head_hash=4dd3f4cb22c296c026deb5a777fa88edcf2dd621f388bd170b08141b5b5898b0
+DIFF 675
+seed=1003 exit=0
+seed=1004 memoria_milli=1000 controllo_milli=375 diff=625 replay_reported=true
+seed=1004 arm=memoria events=361 head_hash=7d0349b94b6d1b17300c367e159ff8a52ab5d3ed98f2599273b85e4301792f07
+seed=1004 arm=controllo events=361 head_hash=cdf7c695b9ffb188c3026c83c14e1b4f84d33ee54f095fffea8635d1c2e9cc3d
+DIFF 625
+seed=1004 exit=0
+seed=1005 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1005 arm=memoria events=361 head_hash=0c9d88a83008ce7bb3e6bf899b644750f05966d26237382eb5a533842274d438
+seed=1005 arm=controllo events=361 head_hash=59ec247b2327cbb5713629f7fe60e5a9c56471e36c17a9054bebba5a0133cbc6
+DIFF 650
+seed=1005 exit=0
+seed=1006 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1006 arm=memoria events=361 head_hash=c83609a0df53e2e5914ad1b8f929f9ceda9e801c799aed4c08e69aee4cffc0b1
+seed=1006 arm=controllo events=361 head_hash=8840adf0cd8cfe561a67e64b0765e8fcea8c517b4d6aa55fbb9f75eed93b62cc
+DIFF 675
+seed=1006 exit=0
+seed=1007 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1007 arm=memoria events=361 head_hash=08545ecfd7a42facb9042758cbb38b9559911016bd8c8bfa0b0f27fd19faf629
+seed=1007 arm=controllo events=361 head_hash=0d7b043ee8eadf5464105623a97adae29dba9fb1c393eb9064e1d569d0794fdc
+DIFF 650
+seed=1007 exit=0
+seed=1008 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1008 arm=memoria events=361 head_hash=5d68fac1953f4bd98675b3911c9284553b08e7c18cb8bbd9bd2e99e024ec45ec
+seed=1008 arm=controllo events=361 head_hash=599b93e35723c83eedb116648ad634e87e7025b7d29aa97b4ee3115388325c6f
+DIFF 700
+seed=1008 exit=0
+seed=1009 memoria_milli=1000 controllo_milli=375 diff=625 replay_reported=true
+seed=1009 arm=memoria events=361 head_hash=6ad32a70a594c391b141991b3f11f32e170cc1bbf03d65efe1abef8db3ed289d
+seed=1009 arm=controllo events=361 head_hash=1d07ff16ae29a2f06221d8eca3606fd056e09deec7817f4038f0aaee8351b055
+DIFF 625
+seed=1009 exit=0
+seed=1010 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1010 arm=memoria events=361 head_hash=5f13195b23d292fb780336e7d1bf9fcde56c3eeb31d9f3c439dc1e492b552ab9
+seed=1010 arm=controllo events=361 head_hash=6647281b055e003f56e24e49d7927e1e0b4c1edc426f3504edaa178cd50aec09
+DIFF 675
+seed=1010 exit=0
+seed=1011 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1011 arm=memoria events=361 head_hash=6b6f7d3dd00a4ad61395330fbba5b90a56e0cca69cd964787ed76b44e9f574ac
+seed=1011 arm=controllo events=361 head_hash=9a7a202533c9bdb8bc8aa7137396bef516ed4db4fd0091c192a033df08b26d25
+DIFF 650
+seed=1011 exit=0
+seed=1012 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1012 arm=memoria events=361 head_hash=0b095ddddd128a3d9d5b8d5f83cfd0c6ebea135c4f55653f4d1607d6ef2771bd
+seed=1012 arm=controllo events=361 head_hash=48b4c39792d44401dcca9097a72ecca1ce0d487878d995d728aabd136dc6ae1b
+DIFF 650
+seed=1012 exit=0
+seed=1013 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1013 arm=memoria events=361 head_hash=45396eeabb2866b5cf04d8252192a4583144d650f2482a9001800eaa87952c40
+seed=1013 arm=controllo events=361 head_hash=e8000e7042a31b5e01c8211155da685684c949f9ad5a60b9eeb9bf6f5928851f
+DIFF 675
+seed=1013 exit=0
+seed=1014 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1014 arm=memoria events=361 head_hash=568c4e349b6b5872d8385925dc3fb094133d4bbfea9a6d1fc181a0e19689b047
+seed=1014 arm=controllo events=361 head_hash=119d8473423c73c2554258607895a546b24d35f266b888ca96845529e2ec59ab
+DIFF 650
+seed=1014 exit=0
+seed=1015 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1015 arm=memoria events=361 head_hash=482f6ffa08a534c15d6b349e0e82dccfea897a788f9fcf92037663f44e92fa50
+seed=1015 arm=controllo events=361 head_hash=0ec36fff4e7f86722f5dfa3f8c0eafbdccfad5fa0ad38e1f3dc997d96c2faf07
+DIFF 650
+seed=1015 exit=0
+seed=1016 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1016 arm=memoria events=361 head_hash=a3c518bfd19f449543318d830edbd55464baf17607284b9cd8c213907f0291f9
+seed=1016 arm=controllo events=361 head_hash=1a99e4d545b627e945e6a113a8dbb9fc80aef023df6260b94c1f7e2e4ad8e710
+DIFF 675
+seed=1016 exit=0
+seed=1017 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1017 arm=memoria events=361 head_hash=0301abd717b07c1ef5d5319ae8c99f8fcefdd6c0e00538144c0cd8ca527f28a4
+seed=1017 arm=controllo events=361 head_hash=2995e54601e0df32e1754fe8b74807d100b7847d3f15f6145796f7f8cea90bb2
+DIFF 650
+seed=1017 exit=0
+seed=1018 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1018 arm=memoria events=361 head_hash=0b297f92741c24679e8d363ec03d67228c6dc509cf658338a006ae462c138fad
+seed=1018 arm=controllo events=361 head_hash=4c32ae328a126883a0dc6199e2d5d4ada11e6e182188c1768d4cc474c3ca5833
+DIFF 650
+seed=1018 exit=0
+seed=1019 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1019 arm=memoria events=361 head_hash=c489bc24de67841c9cc38d9fdea64ee3a5b0eac57a13f762793f1b65f78450b4
+seed=1019 arm=controllo events=361 head_hash=3f472b1bee137a44201bee3920fee6bf50cc914ff3519489d1eb00c52f1171e2
+DIFF 700
+seed=1019 exit=0
+seed=1020 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1020 arm=memoria events=361 head_hash=ef9f366d0bdb64c20b0470e4452e57aec8a67fb4765f343d6864d77d5ce81d00
+seed=1020 arm=controllo events=361 head_hash=eb06911c499fe1a7637a275ce6c1f25abd97e820a22d6aad10c1cef3a19ec53f
+DIFF 650
+seed=1020 exit=0
+seed=1021 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1021 arm=memoria events=361 head_hash=de58e0027021f8e750f061c90064b35d6e7934f4f062a920f389b06e3e67c968
+seed=1021 arm=controllo events=361 head_hash=93fb59e92416f9b2b52da6fa69e34283a36ae4f0a7d020079b11e32e22db550f
+DIFF 700
+seed=1021 exit=0
+seed=1022 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1022 arm=memoria events=361 head_hash=a1cd7ba255c888b47e04ca0989fd2cb9fd642b1ebe94c60b43d8b4b98cf55dda
+seed=1022 arm=controllo events=361 head_hash=25a003342b2455b26bddcd7ecad4670b1f52823eb0dc69b24eeec52a1b0bde38
+DIFF 650
+seed=1022 exit=0
+seed=1023 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1023 arm=memoria events=361 head_hash=55194d460bb2cf97fa74aad771afbbe580584c72cafefd99e78a841c929c8039
+seed=1023 arm=controllo events=361 head_hash=274d1af06767bb8cfaccfeff5a14af40a71ebf54338707fbac72d1540b99e5dd
+DIFF 675
+seed=1023 exit=0
+seed=1024 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1024 arm=memoria events=361 head_hash=074c682cbe583ebddf63000a7af955d71e10b9d60be9e2d151f83e8a689c0b91
+seed=1024 arm=controllo events=361 head_hash=57241c0320275e6feb121c3eaa44f21028c49275ff5781dd89bfae6823baf668
+DIFF 675
+seed=1024 exit=0
+seed=1025 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1025 arm=memoria events=361 head_hash=82e74d9237ed8714cb2a1dfd3bc9f47b8544d0e91143aa33cd95dff380efa6cf
+seed=1025 arm=controllo events=361 head_hash=afe33ca4985f877f521636e130cf82eebc6d19a97f29867a0a571c32a9bf5608
+DIFF 650
+seed=1025 exit=0
+seed=1026 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1026 arm=memoria events=361 head_hash=efe2dcbf219300e580546f001a771e689c6a9ad35b135a4115b47808a4fb19a2
+seed=1026 arm=controllo events=361 head_hash=05090ffe24f72440e3dae7bc5a322b1f64ddb92a707722fa78bc0eeb53e49a52
+DIFF 650
+seed=1026 exit=0
+seed=1027 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1027 arm=memoria events=361 head_hash=6590f7af85bd9c54206d47a85705111c7aec265d08760f22d024fb176b8efffa
+seed=1027 arm=controllo events=361 head_hash=cb497b9f72909e05dd24b6b5cbd86f84c4bb1008c4634b1772e7b748932bd6c2
+DIFF 700
+seed=1027 exit=0
+seed=1028 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1028 arm=memoria events=361 head_hash=55d136e08441fac5745195884a0b9fdc641c302fe2bfbd238a0e2234f4cb5e25
+seed=1028 arm=controllo events=361 head_hash=8a48c3b0d56d0fe5432b202a263eb1cfc0a71cfbea1ebb973880fd85f7e7cd47
+DIFF 650
+seed=1028 exit=0
+seed=1029 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1029 arm=memoria events=361 head_hash=168b86daa96383a36f0f56ef275c6c01d4653ea8a56ff3e5d183a3e618494691
+seed=1029 arm=controllo events=361 head_hash=150db7b103cbcc2c12302bbbaf0fdbce6b93b1762729245aacc2a37d659cc240
+DIFF 650
+seed=1029 exit=0
+seed=1030 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1030 arm=memoria events=361 head_hash=d7a00b983eefeb6832ae0d61b25d853eaa57c3735145977fbcd05428ca6a8638
+seed=1030 arm=controllo events=361 head_hash=d8188dfe80284d7dd82280f3ed4abb3044b243b740c22552e4a5d8d2394bc003
+DIFF 700
+seed=1030 exit=0
+seed=1031 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1031 arm=memoria events=361 head_hash=10e152647edcbaf89a56beb093651622b10959736534e60d86503d390d707abb
+seed=1031 arm=controllo events=361 head_hash=02f152e2032e6c6ef4c11821076396ff5fa0e7ea70d05d714f78af547ff1fbc2
+DIFF 675
+seed=1031 exit=0
+seed=1032 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1032 arm=memoria events=361 head_hash=2f6dadfbd18a7edbd3590659a0f780e4c1f519ebf77a29b886d58f4ee721bf53
+seed=1032 arm=controllo events=361 head_hash=aba9fffac72bb716e80108e7c0655b89b2f331175cff26ec7dd73e26595bef6c
+DIFF 675
+seed=1032 exit=0
+seed=1033 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1033 arm=memoria events=361 head_hash=971c07b79f11e3a1d9a74e099dbaa434aeedfa95b29d0f5914443eb3d21284e0
+seed=1033 arm=controllo events=361 head_hash=bd43fc2e89cb237e6cbf33ab652457819c91bb19ea0728a9a3d5e416b2c366eb
+DIFF 650
+seed=1033 exit=0
+seed=1034 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1034 arm=memoria events=361 head_hash=962bad446745b982e2f82e24c2c41718c13a25c3bd0ba9c422161a559f2d9bc3
+seed=1034 arm=controllo events=361 head_hash=8673842b1b7faaea4c1e5170dbc52ab4b1e54cb413ff269c5fadf277b18dc120
+DIFF 675
+seed=1034 exit=0
+seed=1035 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1035 arm=memoria events=361 head_hash=8838167956a5aba14d1651f921df6a94d1526c5bf08dbd9a44a66c380fabc191
+seed=1035 arm=controllo events=361 head_hash=024b88da74af6491c31e8ea235cb077aa42d8cb792b514f011d3bd3e75acf6ff
+DIFF 650
+seed=1035 exit=0
+seed=1036 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1036 arm=memoria events=361 head_hash=1e7e0d7bc797ea70b72fa180b2a3cf6f54745f814d8b1c14747437f89cee125f
+seed=1036 arm=controllo events=361 head_hash=2588ad7f0e5b1c4f65d532ccb2577bdc7343c284e33a8f571b11c9680dc3bf94
+DIFF 650
+seed=1036 exit=0
+seed=1037 memoria_milli=1000 controllo_milli=400 diff=600 replay_reported=true
+seed=1037 arm=memoria events=361 head_hash=90fa98229604feb658b9220c83f280edb0f984889c339aff57feb6d2c8d6d284
+seed=1037 arm=controllo events=361 head_hash=5e4f37889609f755f112ee56bc1c3f0508caf7cde951dea1c6f4c3430c3038ec
+DIFF 600
+seed=1037 exit=0
+seed=1038 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1038 arm=memoria events=361 head_hash=4d6cf041d3e5d02951f1bc5b84ed46a8a732f8285b92db9939db310be8fb381b
+seed=1038 arm=controllo events=361 head_hash=01bd925256878df1161821d678993c552657a1c25eb983e736c28781465aa97d
+DIFF 675
+seed=1038 exit=0
+seed=1039 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1039 arm=memoria events=361 head_hash=00d841e49b6b5b7422501dccb97792e8b3b182f55c9eee665ecae69a0397a482
+seed=1039 arm=controllo events=361 head_hash=94c595eeba7af467998cb2a43a084b25bc4f2d94dc3ef0932f1a12be69735a98
+DIFF 650
+seed=1039 exit=0
+seed=1040 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1040 arm=memoria events=361 head_hash=d260678179e3764d1365c4b682d23ab99b40088f33d25563c3a00f79ee613d7d
+seed=1040 arm=controllo events=361 head_hash=f510f282f4af4c017ff9e2eed7eba8c11bb48785250501278226b64efab43ea2
+DIFF 675
+seed=1040 exit=0
+seed=1041 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1041 arm=memoria events=361 head_hash=ac39533d077bb143d4638bb826e28bf76ac3bfdc8b4c2ce34f644427a41977aa
+seed=1041 arm=controllo events=361 head_hash=e6dd170c8cabb20f3bab212d091dc5c7b79d7e8926761120869c07ec5490a594
+DIFF 675
+seed=1041 exit=0
+seed=1042 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1042 arm=memoria events=361 head_hash=a646cb55997b0d95f147f79460cdf3e79e924bae431472a48860b402ef7470d6
+seed=1042 arm=controllo events=361 head_hash=25373af4e655050e7417a978b06f04412059919cf7c0e1df96062b17bab05ff3
+DIFF 650
+seed=1042 exit=0
+seed=1043 memoria_milli=1000 controllo_milli=375 diff=625 replay_reported=true
+seed=1043 arm=memoria events=361 head_hash=a7227beacabea82acd0cf116ae459a58cc08128c52595da2ceb1187045f5523f
+seed=1043 arm=controllo events=361 head_hash=a0e82b95e4380f245473d29da5856444e3e8f6b49c2c243f1ffcd42e0cbaada4
+DIFF 625
+seed=1043 exit=0
+seed=1044 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1044 arm=memoria events=361 head_hash=8b146361517d079bbdfba4adeafb6cfece632b765e01be684473b70d83db0d25
+seed=1044 arm=controllo events=361 head_hash=3972cad2501638b5f81c6588477027a49b02d766bb9e5d2f5c8e5b78982f3333
+DIFF 675
+seed=1044 exit=0
+seed=1045 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1045 arm=memoria events=361 head_hash=1f6964948d220ccc8f5a7e59d252af764b88a616ed9c27acde72394fb98b908f
+seed=1045 arm=controllo events=361 head_hash=0ddb8367de4e8c5cb8f88e15e0f76979278f26e644d7c47b4e488c9cac0f6101
+DIFF 650
+seed=1045 exit=0
+seed=1046 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1046 arm=memoria events=361 head_hash=7181edb037e56a4727f84e9af9af63fc351e2935419250e5ffafe111529a763e
+seed=1046 arm=controllo events=361 head_hash=d430b9aac85c1ea018393b5c8b85b8ffb5c52d7ad7232e8f13f32044bf5b24a9
+DIFF 675
+seed=1046 exit=0
+seed=1047 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1047 arm=memoria events=361 head_hash=8535be5bb7127778c257427a1e683576a079f3323d09d231aec6361d6dc2b4eb
+seed=1047 arm=controllo events=361 head_hash=9f19cd3397bbc75a5917e551608d91620437a8735adbddf71a918428af526228
+DIFF 675
+seed=1047 exit=0
+seed=1048 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1048 arm=memoria events=361 head_hash=ff2412700919c1d0995dd89646c01b30e1ae7c0b0cb0ea7816b9a02300cc60fc
+seed=1048 arm=controllo events=361 head_hash=9f1acc2e886bb9e4c1720a0889074d59e28b908217ed9f1736a245d9fe006a5f
+DIFF 700
+seed=1048 exit=0
+seed=1049 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1049 arm=memoria events=361 head_hash=079ff5d0ca62fd73cfaf0f4302df24c92b6a2eea61cc8f49e18a674ae3cfbff2
+seed=1049 arm=controllo events=361 head_hash=3ab294928a7b8f7660c3d29e4fa1aedd80b63dfd5a1364690b858a131a94d959
+DIFF 650
+seed=1049 exit=0
+seed=1050 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1050 arm=memoria events=361 head_hash=3ed48ea7fbeaa1a82fa83cd6e508da5643d6fdd478ca89ee557e4ea6c1ceb30a
+seed=1050 arm=controllo events=361 head_hash=4af0ac0acdf12b86e2bf56994202ca507c1a406385899d585f65b71cb1e0df3a
+DIFF 650
+seed=1050 exit=0
+seed=1051 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1051 arm=memoria events=361 head_hash=27764614d1980a33c739e43e8ec0bcb422fe162ad5d41ee3f880447c6bf99373
+seed=1051 arm=controllo events=361 head_hash=274df1548bb382e1f67fe046b08979f8c8326bf54bef6c745196db2fa7b33278
+DIFF 675
+seed=1051 exit=0
+seed=1052 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1052 arm=memoria events=361 head_hash=2b0e0a7bad332a42061a52bd5059a4fd2e3dfcac28696f2557b46f05a3a96f8a
+seed=1052 arm=controllo events=361 head_hash=d6bd863a7c880454c66217202a3a8adae628c1d970ff03a3d410d20e5f983627
+DIFF 675
+seed=1052 exit=0
+seed=1053 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1053 arm=memoria events=361 head_hash=d888aec8929a0429fd80798a3ef6f6a8941b7da17fb5350667c297c8ff992548
+seed=1053 arm=controllo events=361 head_hash=f5d95d17614df0cb16a8ee5337c8f68e9c73029c66c5033491c43f9108c46da2
+DIFF 700
+seed=1053 exit=0
+seed=1054 memoria_milli=1000 controllo_milli=375 diff=625 replay_reported=true
+seed=1054 arm=memoria events=361 head_hash=394e1f54a54080205481ee089194135663bae0c2ef5aee56444bd1ba99ef6c14
+seed=1054 arm=controllo events=361 head_hash=90a89861b8a23906c5b9777c557e314205e43cf3565db79bcd2fcf00eb9cd47c
+DIFF 625
+seed=1054 exit=0
+seed=1055 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1055 arm=memoria events=361 head_hash=b129f3c7806f3d8728f713fd1c97a3a6d4485a26bfc14898fc44358c91b2ec2c
+seed=1055 arm=controllo events=361 head_hash=095f2413edaf175a74206a12026dda5e4239748f127ed92918c322f2e469833c
+DIFF 700
+seed=1055 exit=0
+seed=1056 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1056 arm=memoria events=361 head_hash=f4118bff3aeef812c697bace05a6dc37430bcbe1dce1c5cc54d46f26c34c9219
+seed=1056 arm=controllo events=361 head_hash=54f5bd4b985f80c7da67e4ae98364d7f297dff6574594e8f8c24c69c8a2c8db3
+DIFF 675
+seed=1056 exit=0
+seed=1057 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1057 arm=memoria events=361 head_hash=3d944df37c28599a42d6833546e3d3de3a155d70a32cb2b5f83a2a05824cf90c
+seed=1057 arm=controllo events=361 head_hash=226b669015c7ed307aa4d1dac685bf6a118f3169113d7d360bfa3d4d7ff6f2ab
+DIFF 675
+seed=1057 exit=0
+seed=1058 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1058 arm=memoria events=361 head_hash=d921f7c1a2fa2fb00102858c68da08d0db93561c34b6e08e7a1713e85d6e7b6a
+seed=1058 arm=controllo events=361 head_hash=5982207ebfb52cc0893aaf57efe9001035bfb153011e3e6835739b7941534bcd
+DIFF 675
+seed=1058 exit=0
+seed=1059 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1059 arm=memoria events=361 head_hash=059dfd5d9e4bba917f425c1920d4cd45e8988b0d4c3b6e2d747512477298a584
+seed=1059 arm=controllo events=361 head_hash=7f708a8927de94ae30ef234e6d3a9a84fd0fd4dcb34403f2eb9513682686d7a0
+DIFF 675
+seed=1059 exit=0
+seed=1060 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1060 arm=memoria events=361 head_hash=da2c4a3a9eabea7f97f7a930cbaea56cccc189ad7081f5591e5556e3ad665253
+seed=1060 arm=controllo events=361 head_hash=a45739142291ac43911dba406925d89a27685ee589dc7f453a92d9783c876e40
+DIFF 700
+seed=1060 exit=0
+seed=1061 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1061 arm=memoria events=361 head_hash=ceb0b820e9fc390c7cc8491b004a6c01ed1218bc3b78ffaa418986b9ddc0028b
+seed=1061 arm=controllo events=361 head_hash=b1309062c4f173fe78b50294ad2a46be475ec6be3e416f91db018ed8a0dda417
+DIFF 700
+seed=1061 exit=0
+seed=1062 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1062 arm=memoria events=361 head_hash=4142a5a9bd30306dd48056a91e5a10f941602ee315f2723c279081e21095d9a0
+seed=1062 arm=controllo events=361 head_hash=43cf3c554833967d3928743415d679a8e8f89bb62a021b7a602d2e0eaa65ec64
+DIFF 675
+seed=1062 exit=0
+seed=1063 memoria_milli=1000 controllo_milli=375 diff=625 replay_reported=true
+seed=1063 arm=memoria events=361 head_hash=a57051a2f2167c463749a3fc6d91c48998221bdf00e0302b1a748fa6d85763fd
+seed=1063 arm=controllo events=361 head_hash=85b4a5ba8656ca9c8a1944bd1e5ed695464e2c363d48119f27fe1457e97b6e8e
+DIFF 625
+seed=1063 exit=0
+seed=1064 memoria_milli=1000 controllo_milli=400 diff=600 replay_reported=true
+seed=1064 arm=memoria events=361 head_hash=7b4908bfac92aa7165355e60d830b83daf6dc6bc9124e761a80d145eb58c8462
+seed=1064 arm=controllo events=361 head_hash=e08011f1967235aa37ce39c9812706f02c015e0317ab442e1763e476d00f7d2b
+DIFF 600
+seed=1064 exit=0
+seed=1065 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1065 arm=memoria events=361 head_hash=55a471ac87e389323b8ebec6e869049bb2453953b30723fa847c8f8d16a2c041
+seed=1065 arm=controllo events=361 head_hash=6d122e2067306b6083bd0cfa3b0e1ac48c5570f552c06accb2cf4bb3dc705f88
+DIFF 675
+seed=1065 exit=0
+seed=1066 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1066 arm=memoria events=361 head_hash=b00dc47470f40a5b15994eb47fe3fb0971cf1f26933a9bf6f5d0838f48f29cc6
+seed=1066 arm=controllo events=361 head_hash=274403860f5dd7435651d226d23717461afffc73e4e2d988aa7f98cc2ae3642b
+DIFF 675
+seed=1066 exit=0
+seed=1067 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1067 arm=memoria events=361 head_hash=7641fc4e81b71c6d8946656e0212fef9007d3e36181b2f598335f40afe37e957
+seed=1067 arm=controllo events=361 head_hash=b997d8b230b2875839c6c82c5fdd223829b71ddb37d0b167d0f96a201382b1e9
+DIFF 675
+seed=1067 exit=0
+seed=1068 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1068 arm=memoria events=361 head_hash=2d2aabc2cb9e5593cb4ac386bbecdc3e692a01fc5ba5c47053b4cf226f5c7865
+seed=1068 arm=controllo events=361 head_hash=8cab997feaddc8af0620f00a6de136542752c956b4c1775d2479d486f0849d6a
+DIFF 650
+seed=1068 exit=0
+seed=1069 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1069 arm=memoria events=361 head_hash=d16ae1124a59ba9a131b2890f307958c5d69f3ed11912bcbbc1eeb3d21623787
+seed=1069 arm=controllo events=361 head_hash=a87aedd94a57380f836defa303189601887344cb953eca2e70ac478ff460baaf
+DIFF 675
+seed=1069 exit=0
+seed=1070 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1070 arm=memoria events=361 head_hash=3db1c84121f38bd74d72a5b2adff171135a77b51d8a6fcdaa689f404db329354
+seed=1070 arm=controllo events=361 head_hash=30b6b9e53361c2c75bcd27f40f2c8c407d56265b88d39f18831e3ddbff972c78
+DIFF 700
+seed=1070 exit=0
+seed=1071 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1071 arm=memoria events=361 head_hash=66ac5d7a28b19d0c8536b14e51594f17622fe6bbb306916954e237d8811dee10
+seed=1071 arm=controllo events=361 head_hash=2c65f26ef6f7b6c630797f98a2a6fe2f1b6769da44bc64c1ea9c6debed66a0a6
+DIFF 675
+seed=1071 exit=0
+seed=1072 memoria_milli=1000 controllo_milli=375 diff=625 replay_reported=true
+seed=1072 arm=memoria events=361 head_hash=1db779a79e72506b9c01ce708dd856d1c8acf9c14fce3937e7dd0f4bd4842b0c
+seed=1072 arm=controllo events=361 head_hash=0a17fc233752f5b91d952bc7b99a504ed968676071baef60409780d965d9676b
+DIFF 625
+seed=1072 exit=0
+seed=1073 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1073 arm=memoria events=361 head_hash=99fb36e478f47a8eb428911a3c1ce0cbecd16fd2af78d6d5164bc4d284ad5a27
+seed=1073 arm=controllo events=361 head_hash=a47d39173874e6ef27449f20a3256ae60ec0b9c3fae4f8527877ce04c605f86f
+DIFF 675
+seed=1073 exit=0
+seed=1074 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1074 arm=memoria events=361 head_hash=0fda73b7b46083edc8af6c294a22eb82294a2872c4aae29c1ac51e9b864eecda
+seed=1074 arm=controllo events=361 head_hash=454cac10b9177bd477e956048116f74512f6402f0f7ae9b15cce220ee2d51e07
+DIFF 650
+seed=1074 exit=0
+seed=1075 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1075 arm=memoria events=361 head_hash=e24f7727fbf4c27b26423e2df19c85c8d05df539e5fb1df41450c8e18c389312
+seed=1075 arm=controllo events=361 head_hash=5294083e1d180da1d6663a0f9d732c75d437d78009039f64f25e7a99e545b81d
+DIFF 675
+seed=1075 exit=0
+seed=1076 memoria_milli=1000 controllo_milli=375 diff=625 replay_reported=true
+seed=1076 arm=memoria events=361 head_hash=9343c3833e62c9c855a0c6d48b06b819f70f69f73544678b0fb976e25fc6f824
+seed=1076 arm=controllo events=361 head_hash=b3ea9766e824ea6455dcc925539fce7a8dcce04ffb4174c0afe371c3355b50a9
+DIFF 625
+seed=1076 exit=0
+seed=1077 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1077 arm=memoria events=361 head_hash=984bf2d247a8535654ea05edbed91ad68f6f3afdf3aae5a4cd1813821b7ac715
+seed=1077 arm=controllo events=361 head_hash=30ce9a93c37a386395b6cfacc8f99f3f8b9324f29e609d87c7025d5bab8becb3
+DIFF 675
+seed=1077 exit=0
+seed=1078 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1078 arm=memoria events=361 head_hash=3acfb384528d44da63cad173cf802a58e2176918465ce1ee8749f757f5345de3
+seed=1078 arm=controllo events=361 head_hash=2044605ce4731ff5e6eb17fd0588c07e01c2ce67f2a82577cfb73953bd7e2074
+DIFF 675
+seed=1078 exit=0
+seed=1079 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1079 arm=memoria events=361 head_hash=267b5ce98fd33b69440e05c9dba02aa04b8206ebbb9904711a489873d05b61f9
+seed=1079 arm=controllo events=361 head_hash=22ce0e73434a86cb8498f0052adc0baa015641fdef5ca366c6dea687ec70b15d
+DIFF 675
+seed=1079 exit=0
+seed=1080 memoria_milli=1000 controllo_milli=375 diff=625 replay_reported=true
+seed=1080 arm=memoria events=361 head_hash=17854582465c622ae1101369f49a566f31d0ea136166fac4e771718096465b4b
+seed=1080 arm=controllo events=361 head_hash=c774dd8177e8bf97df3c17de20c2be70dc06eccdcda44755bca119efb67f7dc7
+DIFF 625
+seed=1080 exit=0
+seed=1081 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1081 arm=memoria events=361 head_hash=3908d43aacf40763ef35e57998ae61b3af9d8254014ffe7b66eeec99e04f41af
+seed=1081 arm=controllo events=361 head_hash=420050e8116fa456f0b93ed53b6edfaf95b9671294f077ff5e4cf0684e9e6999
+DIFF 650
+seed=1081 exit=0
+seed=1082 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1082 arm=memoria events=361 head_hash=c47fa291884e9404b5f6e70abab9b62548f7a0be0f4a8a715785ea8fd4b0a56e
+seed=1082 arm=controllo events=361 head_hash=f04d67a02acaa2fbbc94bfdac989bed3e565af43c1e54c7e348744ad441b2939
+DIFF 675
+seed=1082 exit=0
+seed=1083 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1083 arm=memoria events=361 head_hash=6319f92027b004359d76ec35f6687f863990a2a8e4fb630f3f0a6e776036cf8d
+seed=1083 arm=controllo events=361 head_hash=11c916ce5c7d22e32c3a23c955bf57c25d694f5319219cbcd019f3c7c13ac772
+DIFF 675
+seed=1083 exit=0
+seed=1084 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1084 arm=memoria events=361 head_hash=2d2c3105e734f5fb130cc273689206cfb7939321789edddb3a09a1cce6874550
+seed=1084 arm=controllo events=361 head_hash=9629b2c614b6567ecd1d534fa773840529329eb84989a39957f5aec1304f0be0
+DIFF 700
+seed=1084 exit=0
+seed=1085 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1085 arm=memoria events=361 head_hash=b8573d7abe8c52c140ef9efaff1c90e7584e3cc5090386ddc28c5363271e3931
+seed=1085 arm=controllo events=361 head_hash=3a13df0e591ac7da89be808c4f1957b8828fe473dac76a5431969bad3542406f
+DIFF 650
+seed=1085 exit=0
+seed=1086 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1086 arm=memoria events=361 head_hash=313500f1e60478a7c3af51e2b5aa88559b2c1e732ea33fafbbab9a8314769c67
+seed=1086 arm=controllo events=361 head_hash=a1c7528985dc82e4d53aef740dc5408a5b5269bddd34a61dc4f36188bf9f3af9
+DIFF 675
+seed=1086 exit=0
+seed=1087 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1087 arm=memoria events=361 head_hash=5edd6bf69662f97a7d812e02fab6e340877cbf6d11450990bb4b040db482e0d7
+seed=1087 arm=controllo events=361 head_hash=621d71dddde54adab869122bb94af0d174a7fd4795ec1f3c1e2dbc440a8e5a24
+DIFF 650
+seed=1087 exit=0
+seed=1088 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1088 arm=memoria events=361 head_hash=24d06e956d88907355615e29c419e1c333decaacac47e7900b41656a6f2f8886
+seed=1088 arm=controllo events=361 head_hash=4300d1045716fc213e28a2b35db58ac7a1c88863d9ba15673b011a5364089043
+DIFF 700
+seed=1088 exit=0
+seed=1089 memoria_milli=1000 controllo_milli=375 diff=625 replay_reported=true
+seed=1089 arm=memoria events=361 head_hash=d2599af408a42284eaaedc116132ae6f15f1ab9d9189678cca86ca8125097937
+seed=1089 arm=controllo events=361 head_hash=e36c19267ba0e91a90a692f7e4a1a825b57e253038e5d4b9fd7060d40b1fc6ba
+DIFF 625
+seed=1089 exit=0
+seed=1090 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1090 arm=memoria events=361 head_hash=17925e10387da77e0ced86f71527dd27652bc0d0a10905a0c85d3c2dc87df9c7
+seed=1090 arm=controllo events=361 head_hash=731e9f29a84b0c2fcc36b88c6fcbe87c529c9b76cb44ac2d45711847d2d33ffb
+DIFF 650
+seed=1090 exit=0
+seed=1091 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1091 arm=memoria events=361 head_hash=80cf242ab3b513cf2b580991978634af18cd702e0a36c0ae73a7c3d42dc065fa
+seed=1091 arm=controllo events=361 head_hash=ae787bf329e4e572255884da3f4d3532ae1ddd536c899e5a8c67d2f4c401c640
+DIFF 675
+seed=1091 exit=0
+seed=1092 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1092 arm=memoria events=361 head_hash=60f9496bb9ee5475eb2f5ec8ad92a1c9072db436a4f4d92766b29f1bca16c024
+seed=1092 arm=controllo events=361 head_hash=258a9bba199ec2737c75d34784c5492bcd07161b0a8c671926d16d05a2b39ae7
+DIFF 650
+seed=1092 exit=0
+seed=1093 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1093 arm=memoria events=361 head_hash=9505abf3f14f6081b4cad2d0771042b54351c0467d7b6c0df763801a6bb52167
+seed=1093 arm=controllo events=361 head_hash=057eb9fa13296058e2221076913530a348a506e4b1bf820d679a24c22a08cc1e
+DIFF 650
+seed=1093 exit=0
+seed=1094 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1094 arm=memoria events=361 head_hash=4d1234c4e681e597dee273dd09425a37e8d63e2bf1777f120bb54caa7139c822
+seed=1094 arm=controllo events=361 head_hash=420e2e9f078f7d2fa69dc08db0c14a411f4b9eaf1b9732634cdc591ae99ef960
+DIFF 700
+seed=1094 exit=0
+seed=1095 memoria_milli=1000 controllo_milli=375 diff=625 replay_reported=true
+seed=1095 arm=memoria events=361 head_hash=4c9879b198d8b7bc8848f096c94577badde637b3d511ffa75a48a7a51c3e2302
+seed=1095 arm=controllo events=361 head_hash=af4f4f39201bfb4b7be1dd47313649dc0de878fa4fe2b8a6ee7fc9ed7773dd42
+DIFF 625
+seed=1095 exit=0
+seed=1096 memoria_milli=1000 controllo_milli=325 diff=675 replay_reported=true
+seed=1096 arm=memoria events=361 head_hash=40030c0458ddb36093bc55bbc2cdfc0767b6ed76dbd683ed34b86e5ca898430b
+seed=1096 arm=controllo events=361 head_hash=9ff97329eec6c32a3967233f6d764ab781370faf91a14fa33ed1584022ee4c4f
+DIFF 675
+seed=1096 exit=0
+seed=1097 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1097 arm=memoria events=361 head_hash=ba7efe5a5d53006bd5b4d8a4d35a88c98b188c652c9808efe34988e66617c44f
+seed=1097 arm=controllo events=361 head_hash=d4268b84cf55fe7ba481c3eb816f43895455bfddbc7d2b4ec499c63593ebdbb4
+DIFF 700
+seed=1097 exit=0
+seed=1098 memoria_milli=1000 controllo_milli=350 diff=650 replay_reported=true
+seed=1098 arm=memoria events=361 head_hash=0b595fd296357d09e3aca25dc8ab63b914d6c7cacf7da2157905db2776016226
+seed=1098 arm=controllo events=361 head_hash=858b2f32eda7fb2506cf75676a4643179ea18c9c953c4b3d8a6cf6ed455b9181
+DIFF 650
+seed=1098 exit=0
+seed=1099 memoria_milli=1000 controllo_milli=300 diff=700 replay_reported=true
+seed=1099 arm=memoria events=361 head_hash=36a5f2d30e2768dc69bfaf045c722681528965ddaf3dbc125e4bb507c20fde84
+seed=1099 arm=controllo events=361 head_hash=cc840a54a02468e9aa7264b112aa2ced96f83b34984f714ada7b6da325abb436
+DIFF 700
+seed=1099 exit=0
+Wilcoxon implementation=src/valuation.rs n=100 W=5050 p=2.00409440546296379e-18 Delta=0.66474999999999995 n_pairs=100
+CORPUS_VIOLATIONS=0 STATS_EXIT=0
+LIMIT: replay_reported only checks chain, JSONL roundtrip and reward fold; it does not independently regenerate all policy decisions (L6.9).
+=== SUPPLEMENT: EXISTING SUITE (NOT E2E) ===
+   Compiling version_check v0.9.5
+   Compiling typenum v1.20.1
+   Compiling libc v0.2.191
+   Compiling cfg-if v1.0.5
+   Compiling generic-array v0.14.7
+   Compiling block-buffer v0.10.4
+   Compiling crypto-common v0.1.7
+   Compiling digest v0.10.7
+   Compiling cpufeatures v0.2.17
+   Compiling sha2 v0.10.9
+   Compiling ariadne v0.1.0 (/source)
+warning: variable does not need to be mutable
+   --> tests/l6_protocol.rs:119:9
+    |
+119 |     let mut p = Pcg64::new(7);
+    |         ----^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+warning: `ariadne` (test "l6_protocol") generated 1 warning (run `cargo fix --test "l6_protocol"` to apply 1 suggestion)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 6.33s
+     Running unittests src/lib.rs (target/debug/deps/ariadne-9340d25b58ac7b5e)
+
+running 4 tests
+test event::tests::event_type_parse_is_total_and_strict ... ok
+test log::tests::genesis_line_parses ... ok
+test event::tests::compute_hash_matches_documented_preimage ... ok
+test log::tests::gap_is_chain_error_not_schema_error ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/l0_replay.rs (target/debug/deps/l0_replay-b85c9b5880de57db)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/l6_experiment.rs (target/debug/deps/l6_experiment-aa2c0c5f05cd6cc9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_c1_genesis.rs (target/debug/deps/l0_c1_genesis-7d0c06131c2fe540)
+
+running 2 tests
+test test_genesis_rejects_seed_beyond_i64_max_no_event_no_wrap ... ok
+test test_genesis_accepts_seed_i64_max ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_cycle.rs (target/debug/deps/l0_cycle-d530180b4e5964ba)
+
+running 11 tests
+test budget_draw_1_per_tick_0_per_la_policy ... ok
+test mossa_e_parse_stimolo_mod_3_su_piu_tick ... ok
+test fold_su_log_intero_con_ultima_snapshot_di_state ... ok
+test mai_cicli_parziali_ritmo_sense_action_state ... ok
+test dopo_n_cicli_tick_n_e_catena_verificabile ... ok
+test seme_diverso_produce_log_diverso ... ok
+test determinismo_forte_due_log_indipendenti_byte_identici ... ok
+test un_ciclo_emette_3_eventi_stesso_tick_seq_consecutivi ... ok
+test stimolo_oltre_i64_max_parse_completo_senza_mascheratura ... ok
+test nessun_tick_salta_sequenza_0_1_1_1_2_2_2 ... ok
+test stimolo_sola_stringa_di_cifre_senza_segno_ne_zeri_in_testa ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_event_log.rs (target/debug/deps/l0_event_log-1d7aae1ce7196a50)
+
+running 18 tests
+test test_event_types_constrained_to_sense_action_state ... ok
+test test_compensating_event_payload_and_history_intact ... ok
+test test_event_without_seq_is_rejected ... ok
+test test_genesis_state_is_string_not_integer ... ok
+test test_compensating_state_on_genesis_only_log_copies_genesis_snapshot ... ok
+test test_genesis_golden_hash_constant ... ok
+test test_genesis_prev_hash_zeroes_and_shape ... ok
+test test_compensating_payload_carries_most_recent_state_snapshot_exact ... ok
+test test_genesis_state_matches_engine_state_decimal ... ok
+test test_genesis_state_string_format ... ok
+test test_payload_canonical_sorted_keys_minimal ... ok
+test test_parser_rejects_non_canonical_payload_values ... ok
+test test_unknown_top_level_member_rejected ... ok
+test test_hash_chain_end_to_end ... ok
+test test_immutable_events_slice_borrows ... ok
+test test_replay_prefix_byte_per_byte ... ok
+test test_seq_monotonic_from_zero_no_gaps ... ok
+test test_log_is_append_only_no_mutation_truncation_or_reorder ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_l1_l2_pipeline.rs (target/debug/deps/l0_l1_l2_pipeline-8e12f80c97026e3c)
+
+running 1 test
+test l0_l1_l2_pipeline_is_replayable_and_provenanced ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_n3_canonical_string.rs (target/debug/deps/l0_n3_canonical_string-201640e7342e4dec)
+
+running 13 tests
+test canonical_genesis_1042_line_reserializes_byte_exact ... ok
+test rifiuta_escape_solidus ... ok
+test canonical_counterpart_forms_are_accepted ... ok
+test rifiuta_u_di_controllo_emesso_come_short_escape ... ok
+test rifiuta_u_di_carattere_che_esce_grezzo ... ok
+test rifiuta_u_di_non_ascii ... ok
+test rifiuta_u_di_quote ... ok
+test rifiuta_surrogate_per_carattere_astrale ... ok
+test rifiuta_u_minuscolo_di_carattere_non_controllo ... ok
+test rifiuta_u_maiuscolo_di_controllo_emesso_come_u_minuscolo ... ok
+test rifiuta_escape_non_canonico_in_chiave ... ok
+test rifiuta_u_maiuscolo_di_controllo_emesso_come_short_escape ... ok
+test serializer_emission_set_is_pinned_and_round_trips_byte_exact ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_n3_line_canonical.rs (target/debug/deps/l0_n3_line_canonical-aae7ea2d5b6c8ab1)
+
+running 10 tests
+test rifiuta_meno_zero_su_valore_payload ... ok
+test contratto_newline_finale_invariato ... ok
+test rifiuta_meno_zero_su_tick ... ok
+test flight_log_via_api_round_trip_byte_per_byte ... ok
+test rifiuta_meno_zero_su_seq ... ok
+test rifiuta_permutazione_chiavi_payload ... ok
+test rifiuta_permutazione_membri_top_level ... ok
+test riga_canonica_con_payload_byte_esatta ... ok
+test riga_canonica_payload_vuoto_byte_esatta ... ok
+test riga_genesi_1042_accetta_e_byte_esatta ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_prng.rs (target/debug/deps/l0_prng-9c24ad73230347a1)
+
+running 7 tests
+test clone_a_meta_percorso_riproduce_il_futuro_senza_side_effect ... ok
+test clone_che_fa_gli_stessi_draw_ha_lo_stesso_stato ... ok
+test l_incremento_non_e_mai_pari ... ok
+test interleaving_di_osservazioni_non_altera_la_sequenza ... ok
+test stesso_seed_produce_sequenza_identica_da_istanze_indipendenti ... ok
+test state_decimal_e_round_trippabile_e_senza_zero_in_testa ... ok
+test il_corpus_l6_produce_sequenze_distinte_per_seme ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_replay_process.rs (target/debug/deps/l0_replay_process-cd6fdcab3c128c32)
+
+running 6 tests
+test output_non_vuoto_finisce_con_un_solo_newline ... ok
+test state_nongenesi_pari_a_ticks_e_ultimo_tick_ticks ... ok
+test due_processi_stessi_argomenti_stdout_byte_identico ... ok
+test output_ricaricabile_da_from_jsonl_e_verificato ... ok
+test argomenti_diversi_producono_byte_diversi ... ok
+test argomenti_invalidi_exit_non_zero_stdout_vuoto ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_state.rs (target/debug/deps/l0_state-1ece7d8cfc71c9a7)
+
+running 9 tests
+test test_compensating_state_carries_last_snapshot_and_fold_reads_it ... ok
+test test_fold_genesis_initial_state ... ok
+test test_compensation_does_not_advance_prng ... ok
+test test_prng_read_from_last_state_snapshot_not_recomputed ... ok
+test test_fold_fails_on_broken_chain_before_any_verify ... ok
+test test_fold_is_pure_byte_identical ... ok
+test test_counters_count_hand_built_sequence ... ok
+test test_head_is_hash_of_last_event_not_genesis ... ok
+test test_real_log_every_state_carries_snapshot_and_fold_agrees ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l1_view.rs (target/debug/deps/l1_view-b15dc326d58f7b5d)
+
+running 11 tests
+test genesi_sola_vista_vuota_ancorata_head_hash_d21 ... ok
+test endpoint_non_dichiarato_errore_no_skip_no_autocreazione ... ok
+test eventi_senza_estrazioni_zero_e_array_vuoto ... ok
+test builder_non_riverifica_catena_d20 ... ok
+test arco_unicita_per_trip_e_origin_seq_minimo_d18 ... ok
+test nodo_golden_id_origin_seq_unico_evento ... ok
+test nodi_prima_degli_archi_nello_stesso_evento_d19 ... ok
+test stesso_key_kind_diversi_nodi_distinti_e_arco_cross_kind ... ok
+test zero_scritture_digest_log_intatto ... ok
+test payload_estratti_non_validi_errore ... ok
+test ciclo_quattro_nodi_determinismo_due_esecuzioni_byte_per_byte ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l2_selection.rs (target/debug/deps/l2_selection-94e43dc6e999c213)
+
+running 16 tests
+test budget_zero_ties_and_only_current_candidates ... ok
+test edge_activation_is_fixed_single_and_has_l1_provenance ... ok
+test head_hash_mismatch_is_reported ... ok
+test equal_score_eviction_prefers_newer_origin_then_greater_id ... ok
+test barriers_close_errors_and_summary_order_and_content ... ok
+test in_window_select_without_config_is_error ... ok
+test distinct_edge_events_activate_only_their_own_endpoints ... ok
+test config_replacement_and_l2_21_schema_rules ... ok
+test evaluate_does_not_reemit_summary_before_base ... ok
+test evaluate_uses_only_events_after_the_latest_existing_l2_event ... ok
+test malformed_config_and_barriers_are_errors_but_open_eof_is_valid ... ok
+test integer_salience_budget_provenance_and_encoding ... ok
+test closing_barrier_emits_provenance_summary_before_selection ... ok
+test repeated_edge_reactivates_endpoints_on_each_event ... ok
+     Running tests/l3_memory.rs (target/debug/deps/l3_memory-9fac4416a30e9358)
+test replay_is_deterministic_and_read_only_and_noncanonical_arrays_fail ... ok
+test salience_uses_integer_age_tau_and_accumulates_activations ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+
+running 14 tests
+test l3_1_l3_2_config_is_replayed_and_requires_valid_t_h ... ok
+test l3_7_recall_sequela_and_transition_errors ... ok
+test l3_4_decay_boundaries_saturating_sum_and_evaluation_tick ... ok
+test l3_6_archive_in_log_is_not_reemitted ... ok
+test l3_3_distinct_activation_events_strict_threshold_and_preconfig_history ... ok
+test l3_5_l3_6_encode_order_and_archive_suppression ... ok
+test l3_8_digest_matches_canonical_archived_document_preimage ... ok
+test l3_8_projection_is_deterministic_and_entries_are_ordered ... ok
+test l3_9_evaluate_rejects_a_nonmatching_prefix ... ok
+test l3_7b_recall_without_sequela_with_valid_archive ... ok
+test l3_e1_recall_cannot_reference_future_activation ... ok
+test l3_pipeline_canonical_projection_through_recall_and_rearchive ... ok
+test l3_9_cutoff_ignores_config_but_observes_decisions ... ok
+test l3_e2_future_identity_is_not_archived_before_first_activation ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l4_identity.rs (target/debug/deps/l4_identity-5cf602847932f7e3)
+
+running 24 tests
+test l4_check1_genesis_only_empty_statements_head_hash_and_preimage ... ok
+test l4_check2_ii_relevant_difference_produces_divergent_narrated_statements ... ok
+test l4_check3_control_rementions_and_no_extraction_events_are_not_relevant ... ok
+test l4_check4_lone_narrate_as_last_event_is_tolerated_and_authoritative ... ok
+test l4_check4_l4_with_l2_or_l3_is_schema ... ok
+test l4_check4_malformed_l3_fields_are_schema ... ok
+test l4_check4_broken_pairs_are_schema ... ok
+test l4_check2_i_irrelevant_difference_produces_identical_narrated_statements ... ok
+test l4_check4_replay_non_action_with_l2_or_l3_is_schema ... ok
+test l4_check4_replay_non_action_with_l3_is_schema ... ok
+test l4_check3_select_list_rendering_sorted_dedup_and_empty ... ok
+test l4_check4_self_hash_mismatch_is_schema ... ok
+test l4_check4_unpaired_snapshot_is_schema ... ok
+test l4_check4_state_with_l4_is_schema ... ok
+test l4_check3_all_templates_exact_texts_internal_order_sources_and_join ... ok
+test l4_check4_narrate_at_inexistent_or_l4_is_schema ... ok
+test l4_check6_l4_event_closes_l2_window_without_side_effects ... ok
+test l4_encode4_narrate_and_snapshot_payload_pairs ... ok
+test l4_check5_cutoff_tail_only_and_prefix_coherence ... ok
+test l4_check4_extra_keys_and_bad_shapes_are_schema ... ok
+test l4_encode4_payload_appendable_as_l0_event ... ok
+test l4_check4_replay_rebuilds_document_and_snapshots_verified ... ok
+test l4_check8_l4_apis_do_not_advance_prng_state ... ok
+test l4_check7_determinism_two_evaluations_identical ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l5_social.rs (target/debug/deps/l5_social-49abe7faae932693)
+
+running 20 tests
+test l5_check1_genesis_only_models_empty_head_hash_is_genesis ... ok
+test l5_check4_divergenza_irrelevant_events_leave_model_identical ... ok
+test l5_check2_frontiera_no_l5_writes_in_log ... ok
+test l5_check5_second_order_composition_equals_direct_prediction ... ok
+test l5_check1_replay_is_byte_per_byte ... ok
+test l5_check3_predict_source_seqs_and_no_model ... ok
+test l5_check5_l5_key_pathologies_symmetric_schema ... ok
+test l5_check4_divergenza_relevant_observation_changes_model ... ok
+test l5_check6_base_incoerente_is_head_match ... ok
+test l5_check6_l5_mixed_with_other_tags_is_schema ... ok
+test l5_check6_malformed_osservazioni_is_schema ... ok
+test l5_check6_osservazioni_on_non_sense_is_schema ... ok
+test l5_check6_malformed_l5_payload_is_schema ... ok
+test l5_check7_l5_event_closes_l2_window_no_side_effects ... ok
+test l5_check7_second_predict_replaces_anchor ... ok
+test l5_check7_window_equal_observation_no_update ... ok
+test l5_check7_l5_in_base_prefix_gives_zero_decisions ... ok
+test l5_check7_window_update_mismatch_one_decision ... ok
+test l5_check_osservazioni_non_f1_is_schema ... ok
+test l5_check8_zero_draw_and_deterministic_decisions ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l6_protocol.rs (target/debug/deps/l6_protocol-e36becf66faf20aa)
+
+running 6 tests
+test l6_fold_run_rejects_malformed_stream ... ok
+test l6_reward_is_milli_integer_1000_or_0 ... ok
+test l6_run_payloads_use_only_cue_mossa_esito_and_zero_draws ... ok
+test l6_paired_arms_perceive_identical_streams ... ok
+test l6_memory_arm_learns_the_rule_and_beats_control_on_tests ... ok
+test l6_replay_bit_perfect_jsonl_round_trip_and_verify ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s
+
+     Running tests/l6_valuation.rs (target/debug/deps/l6_valuation-d7f0051e66834a77)
+
+running 10 tests
+test l6_rule_is_balanced_four_cues_per_class ... ok
+test l6_wilcoxon_all_zero_is_no_pairs ... ok
+test l6_pair_generation_is_deterministic_byte_per_byte ... ok
+test l6_tasks_80_learning_then_40_test ... ok
+test l6_wilcoxon_discards_zeros_and_negative_diffs_lower_w ... ok
+test l6_wilcoxon_delta_bar_in_reward_units ... ok
+test l6_wilcoxon_strong_evidence_gives_small_p ... ok
+test l6_different_seeds_give_different_plans ... ok
+test l6_wilcoxon_w_and_p_on_known_small_case ... ok
+test l6_wilcoxon_ties_use_average_rank ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ariadne
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Compiling ariadne v0.1.0 (/source)
+warning: variable does not need to be mutable
+   --> tests/l6_protocol.rs:119:9
+    |
+119 |     let mut p = Pcg64::new(7);
+    |         ----^
+    |         |
+    |         help: remove this `mut`
+    |
+    = note: `#[warn(unused_mut)]` on by default
+
+warning: `ariadne` (test "l6_protocol") generated 1 warning (run `cargo fix --test "l6_protocol"` to apply 1 suggestion)
+    Finished `release` profile [optimized] target(s) in 4.91s
+     Running unittests src/lib.rs (target/release/deps/ariadne-cdef2fd4c807aca5)
+
+running 4 tests
+test log::tests::gap_is_chain_error_not_schema_error ... ok
+test event::tests::event_type_parse_is_total_and_strict ... ok
+test event::tests::compute_hash_matches_documented_preimage ... ok
+test log::tests::genesis_line_parses ... ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/l0_replay.rs (target/release/deps/l0_replay-0c3f1ea0a3268bf9)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/bin/l6_experiment.rs (target/release/deps/l6_experiment-9c41f7005e5b7063)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_c1_genesis.rs (target/release/deps/l0_c1_genesis-8ec9c2cc6ef8e61f)
+
+running 2 tests
+test test_genesis_rejects_seed_beyond_i64_max_no_event_no_wrap ... ok
+test test_genesis_accepts_seed_i64_max ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_cycle.rs (target/release/deps/l0_cycle-fb3a80175f7c24b7)
+
+running 11 tests
+test budget_draw_1_per_tick_0_per_la_policy ... ok
+test dopo_n_cicli_tick_n_e_catena_verificabile ... ok
+test mai_cicli_parziali_ritmo_sense_action_state ... ok
+test determinismo_forte_due_log_indipendenti_byte_identici ... ok
+test seme_diverso_produce_log_diverso ... ok
+test fold_su_log_intero_con_ultima_snapshot_di_state ... ok
+test stimolo_oltre_i64_max_parse_completo_senza_mascheratura ... ok
+test nessun_tick_salta_sequenza_0_1_1_1_2_2_2 ... ok
+test mossa_e_parse_stimolo_mod_3_su_piu_tick ... ok
+test stimolo_sola_stringa_di_cifre_senza_segno_ne_zeri_in_testa ... ok
+test un_ciclo_emette_3_eventi_stesso_tick_seq_consecutivi ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_event_log.rs (target/release/deps/l0_event_log-6175839df16f9f49)
+
+running 18 tests
+test test_compensating_event_payload_and_history_intact ... ok
+test test_event_without_seq_is_rejected ... ok
+test test_compensating_state_on_genesis_only_log_copies_genesis_snapshot ... ok
+test test_genesis_golden_hash_constant ... ok
+test test_event_types_constrained_to_sense_action_state ... ok
+test test_genesis_prev_hash_zeroes_and_shape ... ok
+test test_compensating_payload_carries_most_recent_state_snapshot_exact ... ok
+test test_genesis_state_is_string_not_integer ... ok
+test test_genesis_state_matches_engine_state_decimal ... ok
+test test_genesis_state_string_format ... ok
+test test_hash_chain_end_to_end ... ok
+test test_immutable_events_slice_borrows ... ok
+test test_parser_rejects_non_canonical_payload_values ... ok
+test test_payload_canonical_sorted_keys_minimal ... ok
+test test_log_is_append_only_no_mutation_truncation_or_reorder ... ok
+test test_replay_prefix_byte_per_byte ... ok
+test test_seq_monotonic_from_zero_no_gaps ... ok
+test test_unknown_top_level_member_rejected ... ok
+
+test result: ok. 18 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_l1_l2_pipeline.rs (target/release/deps/l0_l1_l2_pipeline-c29920570ab4609b)
+
+running 1 test
+test l0_l1_l2_pipeline_is_replayable_and_provenanced ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_n3_canonical_string.rs (target/release/deps/l0_n3_canonical_string-438477e7d7be5377)
+
+running 13 tests
+test rifiuta_escape_solidus ... ok
+test rifiuta_escape_non_canonico_in_chiave ... ok
+test canonical_counterpart_forms_are_accepted ... ok
+test rifiuta_u_di_carattere_che_esce_grezzo ... ok
+test rifiuta_u_di_controllo_emesso_come_short_escape ... ok
+test canonical_genesis_1042_line_reserializes_byte_exact ... ok
+test rifiuta_surrogate_per_carattere_astrale ... ok
+test rifiuta_u_di_non_ascii ... ok
+test rifiuta_u_maiuscolo_di_controllo_emesso_come_short_escape ... ok
+test rifiuta_u_di_quote ... ok
+test rifiuta_u_maiuscolo_di_controllo_emesso_come_u_minuscolo ... ok
+test rifiuta_u_minuscolo_di_carattere_non_controllo ... ok
+test serializer_emission_set_is_pinned_and_round_trips_byte_exact ... ok
+
+test result: ok. 13 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_n3_line_canonical.rs (target/release/deps/l0_n3_line_canonical-eefb207943467f16)
+
+running 10 tests
+test contratto_newline_finale_invariato ... ok
+test rifiuta_meno_zero_su_seq ... ok
+test rifiuta_meno_zero_su_tick ... ok
+test flight_log_via_api_round_trip_byte_per_byte ... ok
+test rifiuta_meno_zero_su_valore_payload ... ok
+test rifiuta_permutazione_membri_top_level ... ok
+test riga_canonica_con_payload_byte_esatta ... ok
+test riga_canonica_payload_vuoto_byte_esatta ... ok
+test rifiuta_permutazione_chiavi_payload ... ok
+test riga_genesi_1042_accetta_e_byte_esatta ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_prng.rs (target/release/deps/l0_prng-e7abe457696016d6)
+
+running 7 tests
+test clone_a_meta_percorso_riproduce_il_futuro_senza_side_effect ... ok
+test interleaving_di_osservazioni_non_altera_la_sequenza ... ok
+test clone_che_fa_gli_stessi_draw_ha_lo_stesso_stato ... ok
+test l_incremento_non_e_mai_pari ... ok
+test state_decimal_e_round_trippabile_e_senza_zero_in_testa ... ok
+test stesso_seed_produce_sequenza_identica_da_istanze_indipendenti ... ok
+test il_corpus_l6_produce_sequenze_distinte_per_seme ... ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_replay_process.rs (target/release/deps/l0_replay_process-81f37ffbd597e132)
+
+running 6 tests
+test output_non_vuoto_finisce_con_un_solo_newline ... ok
+test output_ricaricabile_da_from_jsonl_e_verificato ... ok
+test state_nongenesi_pari_a_ticks_e_ultimo_tick_ticks ... ok
+test due_processi_stessi_argomenti_stdout_byte_identico ... ok
+test argomenti_diversi_producono_byte_diversi ... ok
+test argomenti_invalidi_exit_non_zero_stdout_vuoto ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l0_state.rs (target/release/deps/l0_state-66d059bcd820c7d0)
+
+running 9 tests
+test test_compensating_state_carries_last_snapshot_and_fold_reads_it ... ok
+test test_compensation_does_not_advance_prng ... ok
+test test_fold_fails_on_broken_chain_before_any_verify ... ok
+test test_counters_count_hand_built_sequence ... ok
+test test_head_is_hash_of_last_event_not_genesis ... ok
+test test_fold_is_pure_byte_identical ... ok
+test test_fold_genesis_initial_state ... ok
+test test_prng_read_from_last_state_snapshot_not_recomputed ... ok
+test test_real_log_every_state_carries_snapshot_and_fold_agrees ... ok
+
+test result: ok. 9 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l1_view.rs (target/release/deps/l1_view-903ac7ec14f4074e)
+
+running 11 tests
+test endpoint_non_dichiarato_errore_no_skip_no_autocreazione ... ok
+test arco_unicita_per_trip_e_origin_seq_minimo_d18 ... ok
+test genesi_sola_vista_vuota_ancorata_head_hash_d21 ... ok
+test eventi_senza_estrazioni_zero_e_array_vuoto ... ok
+test nodi_prima_degli_archi_nello_stesso_evento_d19 ... ok
+test nodo_golden_id_origin_seq_unico_evento ... ok
+test ciclo_quattro_nodi_determinismo_due_esecuzioni_byte_per_byte ... ok
+test payload_estratti_non_validi_errore ... ok
+test builder_non_riverifica_catena_d20 ... ok
+test stesso_key_kind_diversi_nodi_distinti_e_arco_cross_kind ... ok
+test zero_scritture_digest_log_intatto ... ok
+
+test result: ok. 11 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l2_selection.rs (target/release/deps/l2_selection-2ef23e21864b1655)
+
+running 16 tests
+test budget_zero_ties_and_only_current_candidates ... ok
+test closing_barrier_emits_provenance_summary_before_selection ... ok
+test barriers_close_errors_and_summary_order_and_content ... ok
+test config_replacement_and_l2_21_schema_rules ... ok
+test distinct_edge_events_activate_only_their_own_endpoints ... ok
+test head_hash_mismatch_is_reported ... ok
+test edge_activation_is_fixed_single_and_has_l1_provenance ... ok
+test evaluate_uses_only_events_after_the_latest_existing_l2_event ... ok
+test in_window_select_without_config_is_error ... ok
+test equal_score_eviction_prefers_newer_origin_then_greater_id ... ok
+test evaluate_does_not_reemit_summary_before_base ... ok
+test integer_salience_budget_provenance_and_encoding ... ok
+test repeated_edge_reactivates_endpoints_on_each_event ... ok
+test malformed_config_and_barriers_are_errors_but_open_eof_is_valid ... ok
+test replay_is_deterministic_and_read_only_and_noncanonical_arrays_fail ... ok
+test salience_uses_integer_age_tau_and_accumulates_activations ... ok
+
+test result: ok. 16 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l3_memory.rs (target/release/deps/l3_memory-ecd23d2da4388148)
+
+running 14 tests
+test l3_1_l3_2_config_is_replayed_and_requires_valid_t_h ... ok
+test l3_5_l3_6_encode_order_and_archive_suppression ... ok
+test l3_7_recall_sequela_and_transition_errors ... ok
+test l3_3_distinct_activation_events_strict_threshold_and_preconfig_history ... ok
+test l3_4_decay_boundaries_saturating_sum_and_evaluation_tick ... ok
+test l3_8_digest_matches_canonical_archived_document_preimage ... ok
+test l3_7b_recall_without_sequela_with_valid_archive ... ok
+test l3_6_archive_in_log_is_not_reemitted ... ok
+test l3_9_evaluate_rejects_a_nonmatching_prefix ... ok
+test l3_9_cutoff_ignores_config_but_observes_decisions ... ok
+test l3_8_projection_is_deterministic_and_entries_are_ordered ... ok
+test l3_e1_recall_cannot_reference_future_activation ... ok
+test l3_pipeline_canonical_projection_through_recall_and_rearchive ... ok
+test l3_e2_future_identity_is_not_archived_before_first_activation ... ok
+
+test result: ok. 14 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l4_identity.rs (target/release/deps/l4_identity-55efa5235957dc54)
+
+running 24 tests
+test l4_check1_genesis_only_empty_statements_head_hash_and_preimage ... ok
+test l4_check3_control_rementions_and_no_extraction_events_are_not_relevant ... ok
+test l4_check3_select_list_rendering_sorted_dedup_and_empty ... ok
+test l4_check3_all_templates_exact_texts_internal_order_sources_and_join ... ok
+test l4_check2_ii_relevant_difference_produces_divergent_narrated_statements ... ok
+test l4_check4_l4_with_l2_or_l3_is_schema ... ok
+test l4_check4_broken_pairs_are_schema ... ok
+test l4_check4_extra_keys_and_bad_shapes_are_schema ... ok
+test l4_check2_i_irrelevant_difference_produces_identical_narrated_statements ... ok
+test l4_check4_lone_narrate_as_last_event_is_tolerated_and_authoritative ... ok
+test l4_check4_malformed_l3_fields_are_schema ... ok
+test l4_check4_replay_non_action_with_l2_or_l3_is_schema ... ok
+test l4_check4_narrate_at_inexistent_or_l4_is_schema ... ok
+test l4_check4_replay_non_action_with_l3_is_schema ... ok
+test l4_check4_replay_rebuilds_document_and_snapshots_verified ... ok
+test l4_check4_self_hash_mismatch_is_schema ... ok
+test l4_check6_l4_event_closes_l2_window_without_side_effects ... ok
+test l4_check5_cutoff_tail_only_and_prefix_coherence ... ok
+test l4_check4_state_with_l4_is_schema ... ok
+test l4_check7_determinism_two_evaluations_identical ... ok
+test l4_check4_unpaired_snapshot_is_schema ... ok
+test l4_check8_l4_apis_do_not_advance_prng_state ... ok
+test l4_encode4_payload_appendable_as_l0_event ... ok
+test l4_encode4_narrate_and_snapshot_payload_pairs ... ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l5_social.rs (target/release/deps/l5_social-9a0d26fb7285405c)
+
+running 20 tests
+test l5_check1_replay_is_byte_per_byte ... ok
+test l5_check5_l5_key_pathologies_symmetric_schema ... ok
+test l5_check4_divergenza_relevant_observation_changes_model ... ok
+test l5_check1_genesis_only_models_empty_head_hash_is_genesis ... ok
+test l5_check5_second_order_composition_equals_direct_prediction ... ok
+test l5_check6_base_incoerente_is_head_match ... ok
+test l5_check6_l5_mixed_with_other_tags_is_schema ... ok
+test l5_check3_predict_source_seqs_and_no_model ... ok
+test l5_check2_frontiera_no_l5_writes_in_log ... ok
+test l5_check6_malformed_l5_payload_is_schema ... ok
+test l5_check4_divergenza_irrelevant_events_leave_model_identical ... ok
+test l5_check6_osservazioni_on_non_sense_is_schema ... ok
+test l5_check6_malformed_osservazioni_is_schema ... ok
+test l5_check7_l5_event_closes_l2_window_no_side_effects ... ok
+test l5_check_osservazioni_non_f1_is_schema ... ok
+test l5_check7_window_equal_observation_no_update ... ok
+test l5_check7_window_update_mismatch_one_decision ... ok
+test l5_check7_l5_in_base_prefix_gives_zero_decisions ... ok
+test l5_check8_zero_draw_and_deterministic_decisions ... ok
+test l5_check7_second_predict_replaces_anchor ... ok
+
+test result: ok. 20 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/l6_protocol.rs (target/release/deps/l6_protocol-8f042fa0a1f91405)
+
+running 6 tests
+test l6_fold_run_rejects_malformed_stream ... ok
+test l6_reward_is_milli_integer_1000_or_0 ... ok
+test l6_run_payloads_use_only_cue_mossa_esito_and_zero_draws ... ok
+test l6_paired_arms_perceive_identical_streams ... ok
+test l6_memory_arm_learns_the_rule_and_beats_control_on_tests ... ok
+test l6_replay_bit_perfect_jsonl_round_trip_and_verify ... ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.05s
+
+     Running tests/l6_valuation.rs (target/release/deps/l6_valuation-d0a084f75d9ef650)
+
+running 10 tests
+test l6_different_seeds_give_different_plans ... ok
+test l6_rule_is_balanced_four_cues_per_class ... ok
+test l6_tasks_80_learning_then_40_test ... ok
+test l6_pair_generation_is_deterministic_byte_per_byte ... ok
+test l6_wilcoxon_all_zero_is_no_pairs ... ok
+test l6_wilcoxon_delta_bar_in_reward_units ... ok
+test l6_wilcoxon_discards_zeros_and_negative_diffs_lower_w ... ok
+test l6_wilcoxon_ties_use_average_rank ... ok
+test l6_wilcoxon_strong_evidence_gives_small_p ... ok
+test l6_wilcoxon_w_and_p_on_known_small_case ... ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests ariadne
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+SUITE_DEBUG_EXIT=0 SUITE_RELEASE_EXIT=0
+=== SUMMARY ===
+BLOCK 1 PASS
+BLOCK 2 FAIL: unified E2E absent / scenario unspecified
+BLOCK 3 PASS (L2 R1/R2 code-presence check, reference 610b43c)
+BLOCK 4 PASS (corpus execution, hard timeout, implemented Wilcoxon thresholds only)
+No acceptance verdict. Known replay limitation retained. No production logic or repository tests modified.
+
+CONTAINER_EXIT=2 (2 denotes missing E2E with remaining checks successful)
