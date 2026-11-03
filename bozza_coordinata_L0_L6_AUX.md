@@ -107,7 +107,8 @@ formale di `data` e i casi in cui le fonti vuote siano valide sono
 | `level` | `kind` proposti | `data` da definire con schema chiuso |
 | --- | --- | --- |
 | `L1` | `extract` | `nodes`, `edges` con membri F1 e ordinamento L1 |
-| `L2` | `config`, `select`, `summary`, `barrier` | campi corrispondenti a L2.1/L2.21, escluso il vecchio discriminante top-level `l2` |
+| `L2` | `config`, `select`, `summary`, `barrier` | campi corrispondenti a L2.1/L2.21, escluso il vecchio discriminante top-level `l2`; la corrispondenza con `L2_SUMMARY` è da fissare in S4/S6 |
+| **TBD** | `L2_WINDOW_CLOSE` | chiusura esplicita proposta, classificata non-L2 per la semantica della finestra; `level`, `kind` wire e campi esatti da firmare in S4/S6 |
 | `L3` | `config`, `promote`, `archive`, `recall` | campi corrispondenti a L3.1–L3.7, escluso `l3` |
 | `L4` | `narrate`, `snapshot` | campi corrispondenti a L4.1, escluso `l4` |
 | `L5` | `observation`, `predict`, `model_update` | osservazioni o campi decisionali L5.2/L5.10, escluso `l5` |
@@ -148,32 +149,38 @@ valido per `L1/extract` e quali tipi di fonte siano ammessi (**S4**).
 
 ### 3.2 L2 — finestra offline: proposta da firmare
 
-kingspina propone di sostituire la precedente chiusura implicita con una
-**chiusura esplicita tra cicli L0 completi**. La sequenza proposta per v2 è:
+kingspina propone la seguente regola precisa, che sostituisce nella bozza
+la precedente proposta di chiusura con `L2/barrier phase="close"`:
 
-1. `L2/barrier` senza fase apre la finestra; uno o più `L2/select`, quando
-   previsti, sono apposti nella finestra.
-2. `L2/barrier` con `phase="close"` chiude esplicitamente la finestra.
-3. Il `L2/summary`, se dovuto per le espulsioni registrate nella finestra,
-   segue la chiusura nel rispetto del manifest e prima di iniziare la
-   successiva tripletta L0. La sequenza apertura → select → chiusura →
-   summary resta nell'intervallo tra cicli completi.
-4. Un evento **non-L2** prima della chiusura esplicita è rifiutato: non
-   chiude implicitamente la finestra. Questo include l'avvio di un nuovo
-   ciclo L0 e gli AUX di altri livelli. Il summary non viene quindi inserito
-   nella tripletta `SENSE → ACTION → STATE`.
+1. La finestra si apre e i `select` ammessi registrano le espulsioni;
+   l'ordine concreto è fissato nel manifest.
+2. Tra due cicli L0 completi il driver appone un AUX denominato
+   **`L2_WINDOW_CLOSE`**, classificato **non-L2 ai fini della finestra**.
+   È l'eccezione esplicita al rifiuto degli altri eventi non-L2 prima della
+   chiusura: chiude la finestra e congela le espulsioni già registrate.
+3. **Subito dopo, senza eventi intermedi**, il driver appone un AUX
+   **`L2_SUMMARY`** con le espulsioni congelate e le rispettive seq sorgenti.
+   I due AUX hanno il tick dell'ultimo STATE completato e seq globali
+   consecutive; non interrompono la tripletta L0 e non avanzano il tick.
+4. Un evento non-L2 **diverso dal `L2_WINDOW_CLOSE` autorizzato** prima
+   della chiusura è rifiutato. Il record di chiusura è quindi non-L2 ma
+   esplicitamente ammesso per compiere la chiusura, non un evento da
+   respingere in base alla regola precedente.
 
 Questa è una **proposta di modifica di L2.25 per v2**, non la regola vigente
 per i log storici. Non implica una modifica retroattiva ai report o ai log
-v1. La sequenza indicata non precisa ancora tutti gli eventi L2 ammessi in
-finestra, il trattamento della fine log con finestra aperta, la posizione
-esatta del summary dovuto rispetto a eventuali altri AUX L2, né gli errori
-specifici: restano da definire e approvare (S3–S4 e dettaglio S6).
+v1. Restano da definire e approvare: codifica esatta `level`/`kind` dei due
+AUX e loro schema chiuso; significato di «seq sorgenti» delle espulsioni;
+eventi L2 ammessi nella finestra; trattamento di log interrotto o terminato
+tra chiusura e summary; errori specifici. La proposta dice di apporre sempre
+un summary subito dopo la chiusura: va chiarito come si coordini con L2.15,
+che non prevede summary per una finestra senza espulsioni. Nessuna delle due
+interpretazioni è scelta in questa bozza (S3–S4 e dettaglio S6).
 
-**S6 — proposta ricevuta, non firma formale:** la scelta di chiusura
-esplicita è riportata sopra; il testo normativo completo e i casi limite
-richiedono approvazione. Manifest e oracoli restano incompleti; nessun ordine
-eseguibile è dichiarato pronto.
+**S6 — proposta ricevuta, non firma formale:** la coppia `L2_WINDOW_CLOSE`
+→ `L2_SUMMARY` è riportata sopra; il testo normativo completo e i casi limite
+richiedono la firma di kingspina. L'agente non firma. Manifest e oracoli
+restano incompleti; nessun ordine eseguibile è dichiarato pronto.
 
 ### 3.3 L3
 
