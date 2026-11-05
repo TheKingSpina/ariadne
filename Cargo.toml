@@ -3,6 +3,7 @@ name = "ariadne"
 version = "0.1.0"
 edition = "2021"
 description = "L0 — substrato: log append-only, schema evento, catena di hash, correzioni compensative"
+license = "AGPL-3.0-only"
 
 # Unica dipendenza di produzione: SHA-256.
 [dependencies]

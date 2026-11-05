@@ -1,5 +1,7 @@
 **README.md — Ariadne**
 
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](LICENSE)
+
 **Visione**
 Ariadne è un'architettura cognitiva a livelli costruita attorno a un'unica verità: il log append-only aciclico. Ogni livello superiore è solo una vista o un processo sul log, mai un'isola separata. Il filo di Arianna è quello: replay deterministico dalla genesi, sempre.
 
@@ -28,3 +30,6 @@ Ariadne è un'architettura cognitiva a livelli costruita attorno a un'unica veri
 - **Distribuzione**: binario statico unico, zero runtime.
 - **Modello deploy**: local-first sul Mac mini, col substrato incorporato; eventuale modalità daemon server come estensione futura, mai come prerequisito.
 - **Memoria di sviluppo**: Mnemosyne come registro dei ricordi di progetto, con approvazione in governance.
+
+**Licenza**
+Ariadne è distribuito secondo la GNU Affero General Public License v3.0 (AGPL-3.0). Il testo completo della licenza è nel file [`LICENSE`](LICENSE); l'intestazione di copyright è «Copyright (c) Alessandro Spinabelli 2026». La AGPL è una licenza copyleft forte che include l'uso in rete: chi offre il software come servizio deve rendere disponibile il codice sorgente corrispondente. La licenza è espressa come `AGPL-3.0-only` in `Cargo.toml`.
