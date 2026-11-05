@@ -1,0 +1,26 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Build binaries used by Python tests
+        run: cargo build --locked --bins
+      - name: Rust tests
+        run: cargo test --locked
+      - name: Python tests
+        run: python3 -m unittest -v dashboard.test_backup dashboard.test_dashboard mcp.test_ariadne_server
+      - name: Verify the independent AUX v2 oracle
+        run: python3 preparazione_stress/aux_v2_oracle.py verify

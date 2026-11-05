@@ -575,3 +575,448 @@ definire.
 
 Resta sospesa qualsiasi implementazione o esecuzione fino ad approvazione
 dell'emendamento completo e dei manifest/oracoli completi.
+
+## 11. Proposta successiva di kingspina — chiusura L2 atomica
+
+**Proposta da approvare, non legge vigente.** Per il protocollo esteso v2,
+kingspina propone di **vietare la chiusura implicita** della finestra L2 e
+richiedere, fra `STATE` e il `SENSE` successivo, il seguente batch atomico:
+
+1. `AUX L2/barrier` con `phase="close"`;
+2. `AUX L2/summary`, anche vuoto, con le espulsioni già registrate nella
+   finestra.
+
+I due AUX devono avere **seq globali consecutive**, lo **stesso tick** e
+nessun evento intermedio; non avanzano il tick e non interrompono una
+tripletta L0. Se queste condizioni non sono rispettate, **l'append viene
+rifiutata**. Come nella proposta di operazione atomica della §10.2, il
+confine e le garanzie di atomicità devono essere definiti nel testo da
+firmare: nessuna chiamata all'API attuale viene dichiarata sufficiente.
+
+Per la lettura dei log esterni resta da precisare l'errore applicabile a una
+coppia incompleta o non valida; non si sostituisce con questa bozza la
+semantica vigente dei log storici v1. Schema canonico del summary vuoto,
+contenuto e provenienza delle espulsioni, eventi ammessi prima del batch e
+mapping degli errori restano da completare.
+
+Questa proposta non firma gli altri punti aperti e non autorizza modifiche
+alla logica, test o esecuzione Docker.
+
+## 12. Decisioni di dettaglio S6 per delega — testo da ratificare
+
+Su delega di kingspina «decidile tu», le seguenti decisioni completano la
+proposta S6 della §11. La delega riguarda i dettagli aperti di S6 qui sotto;
+non si presume estesa agli altri punti S1–S17. **Testo ancora da ratificare:**
+non modifica le leggi vigenti e non autorizza implementazione o esecuzione.
+
+### 12.1 Batch e atomicità
+
+La chiusura è richiesta tramite una sola operazione logica
+`append_l2_close_summary`, nome provvisorio dell'interfaccia, che riceve
+entrambi gli eventi già costruiti. Prima di mutare il log valida la fase
+L0, finestra aperta, tick, schemi, `sources`, espulsioni e consecutività
+prevista, e prepara entrambe le preimage e i rispettivi hash in memoria.
+Se un controllo o la preparazione fallisce, **nessuno dei due eventi è
+aggiunto**. In caso di successo, i due eventi sono aggiunti in ordine,
+con seq `n` e `n+1`, stesso tick dell'ultimo STATE ammesso, e senza eventi
+intermedi. `summary.prev_hash = close.hash`.
+
+L'atomicità qui è la proprietà osservabile dell'API sul log in memoria:
+successo con due eventi o errore senza mutazione. Non è una garanzia di
+durabilità su disco, di crash consistency o di scritture concorrenti: tali
+proprietà non sono specificate da questa decisione. La serializzazione
+JSONL non deve essere presentata come commit transazionale durevole.
+
+### 12.2 Contenuto e summary vuoto
+
+Il summary riporta **solo** le espulsioni dei select già apposti nella
+finestra appena chiusa, deduplicate e in ordine crescente secondo la seq di
+origine L0 delle identità; la provenienza conserva anche i riferimenti ai
+select registrati. Per l'identificazione delle identità con la stessa
+`origin_seq` si conserva il criterio L2.26, da adattare esplicitamente al
+formato AUX e alla decisione finale sulle attivazioni S5.
+
+Il contenuto logico del summary vuoto ha `expulsions=[]` e `text=""`;
+le rispettive fonti di espulsione sono vuote. L'evento summary è comunque
+obbligatorio subito dopo close. Le esatte chiavi e la loro codifica nei
+campi canonici `data`, `sources`, `provenance` restano subordinate allo
+schema comune S4; non si deduce che ogni altro tipo di AUX ammetta fonti
+vuote.
+
+### 12.3 Altri eventi e casi incompleti
+
+Durante una finestra aperta sono ammessi soltanto gli eventi L2 v2
+autorizzati dallo schema della finestra; la chiusura avviene esclusivamente
+tramite il batch sopra. Un tentativo di appendere un evento non-L2 prima
+della chiusura è rifiutato senza mutare il log; non chiude implicitamente la
+finestra. Una seconda apertura e una chiusura senza finestra aperta sono
+errori.
+
+Per un log esterno dichiarato v2, un `close` in coda, un evento intermedio,
+un summary non corrispondente o una coppia con seq/tick errati dà errore
+esplicito e **nessun replay accettato come valido**. Un log v2 che termina
+con finestra aperta ma **senza** avere apposto close rimane un prefisso
+incompleto tollerato in lettura, non una finestra completata; il gate dello
+stress test può richiedere la chiusura completa. Questa tolleranza non
+consente di proseguire il ciclo L0 finché la finestra non è chiusa.
+
+### 12.4 Errori proposti e compatibilità
+
+Si propongono codici distinguibili `l2_window_state` per apertura/chiusura
+non ammesse, `l2_close_summary_incomplete` per coppia mancante o interrotta,
+`l2_close_summary_mismatch` per tick, seq o contenuto della coppia non
+conformi, e `l2_non_l2_before_close` per il tentativo di evento non-L2.
+Nomi, mapping verso enum/API e precedenza se più controlli falliscono sono
+proposti per la definizione coordinata S3; non si assume che esistano nel
+codice attuale.
+
+Per la **v2**, la chiusura implicita L2.25 e la regola storica L2.15 «nessun
+summary senza espulsioni» sono sostituite dal batch esplicito con summary
+anche vuoto. La semantica **v1 rimane invariata** per i log storici dichiarati
+v1: nessuna riscrittura né ricalcolo degli hash. Restano aperti schema S4,
+provenienza/attivazioni S5, versionamento e API S15–S17 e il manifest con
+oracoli concreti.
+
+## 13. Decisioni progettuali per delega — bozza coordinata da ratificare
+
+kingspina ha delegato all'agente le decisioni progettuali ancora aperte
+elencate dopo la §12. Le scelte di seguito sono assunte **per delega nella
+bozza**, non rappresentano un'implementazione già esistente né una firma
+umana già apposta sul testo definitivo. In caso di contrasto con le proposte
+precedenti di questo file, questa sezione registra la scelta più recente;
+non riscrive le leggi o gli artefatti storici. Manifest e oracoli concreti
+vanno ancora completati e approvati: la delega non autorizza a inventare
+hash o risultati attesi né ad avviare test o Docker.
+
+### 13.1 Profilo v2 e codifica
+
+Un evento AUX usa il consueto involucro L0 `seq,tick,type,payload,prev_hash,
+hash`, con `type="AUX"`; `tick` è soltanto top-level. Il payload piatto ha
+esattamente sei chiavi stringa: `data`, `kind`, `level`, `protocol_version`,
+`provenance`, `sources`. `protocol_version` è `"2"`; `data` e `provenance`
+contengono ciascuno un oggetto JSON canonico, `sources` un array JSON
+canonico di interi. Ogni valore interno è una stringa L0; chiavi in ordine
+lessicografico di byte UTF-8, nessuno spazio, stringhe e numeri nella
+grammatica canonica L0/F1. I numeri interni rappresentano interi `i64` non
+negativi quando sono seq, conteggi o classi; riferimenti non rappresentabili
+sono errore, mai cast silenziosi. Oggetti annidati e array interni seguono
+ricorsivamente lo stesso canone. I campi non elencati sono vietati.
+
+`sources` è ordinato, deduplicato e contiene soltanto seq **precedenti** di
+eventi L0 non-AUX nel log principale; per decisioni che dipendono da AUX,
+gli identificativi di tali AUX stanno in `provenance`, non in `sources`.
+La genesi non è una sorgente di estrazione L1. Per `L5/observation`,
+`sources` identifica invece ancore temporali L0, non fonti del contenuto;
+la genesi è ammessa come ancora a tick 0 secondo la §13.8. I tipi ammessi
+come fonti L1 restano da fissare nel manifest definitivo. Una fonte esterna
+non presente nel log non viene inventata come seq L0.
+
+Per tutti i kind tranne `L5/observation`, `provenance` ha esattamente due
+campi: `members` e `refs`, entrambi array. Per `L5/observation` aggiunge
+esattamente il campo `external` specificato nella §13.8.
+`refs` è array deduplicato crescente di seq AUX precedenti; `members` è
+array di oggetti esatti `{"index":<i64>,"sources":[<seq>,...]}`, ordinato
+per index, senza duplicati. Per `L1/extract` contiene una voce per membro,
+indicizzato sulla concatenazione `nodes` poi `edges` nell'ordine del loro
+array; ogni `sources` del membro è non vuoto, deduplicato crescente e
+sottoinsieme di `sources` dell'AUX. L'unione delle fonti dei membri deve
+coincidere con `sources`. Per gli altri kind `members=[]`; `refs` elenca
+gli AUX da cui la decisione dipende. `sources=[]`, `refs=[]` sono ammessi
+per configurazioni e barriere; gli altri kind devono soddisfare le fonti
+minime indicate dal loro catalogo e dal manifest. Nessun riferimento a seq
+futura o inesistente; l'hash della catena prova l'integrità del registro,
+non la verità della provenienza.
+
+Catalogo chiuso di `data` (gli array e oggetti indicati sono valori interni
+del JSON canonico contenuto nella stringa `data`):
+
+| level | kind | Campi esatti in `data` |
+| --- | --- | --- |
+| L1 | extract | `edges`, `nodes`: array di membri esatti come L1 F1 |
+| L2 | config | `k`, `tau` |
+| L2 | barrier | `phase`, stringa `open` o `close` |
+| L2 | select | `at`, `downs`, `ups` |
+| L2 | summary | `expulsions`, `text` |
+| L3 | config | `H`, `T` |
+| L3 | promote, archive, recall | `at`, `id`, `origin_seq` |
+| L4 | narrate | `at`, `sources`, `text` |
+| L4 | snapshot | `at`, `self_hash` |
+| L5 | observation | `observations`, array dei membri §13.4 |
+| L5 | predict | `at`, `id`, `previsto`, `sources` |
+| L5 | model_update | `at`, `id`, `osservato`, `previsto`, `sources` |
+
+I domini di `k`, `tau`, `T`, `H`, ID, `at`, liste e transizioni restano
+quelli delle rispettive leggi, adattati alle seq globali v2 qui specificate.
+Liste nel `data` interno sono array JSON, non stringhe JSON annidate una
+seconda volta. `at` di L2/L3/L4/L5 si riferisce all'evento generatore
+autorizzato dalla legge del livello; quando è un AUX, deve essere precedente
+all'AUX decisionale. Le `sources` nel `data` delle decisioni conservano il
+significato bibliografico specifico del livello, e possono citare seq AUX;
+sono distinte dalle `sources` esterne, che contengono solo seq L0; per
+`L5/observation` queste ultime sono ancore temporali, come nella §13.8.
+Il controllo di coerenza e la propagazione delle sorgenti esterne avvengono
+risalendo i `refs` in `provenance`; i riferimenti necessari e quelli vuoti
+per ciascun evento del manifest vanno elencati prima della sua firma.
+
+### 13.2 Provenienza e attivazioni
+
+Per ogni membro L1, `origin_seq` è la minima seq L0 presente nelle fonti
+della sua **prima dichiarazione** registrata, selezionata dall'array fonti
+del membro stesso. Dichiarazioni successive non cambiano l'origine. Per L2 e
+L3 si deduplica l'attivazione per coppia **(identità, seq L0 sorgente)**:
+due AUX distinti che citano la stessa sorgente per la stessa identità contano
+una sola attivazione; fonti distinte possono contarne una ciascuna. Questa
+è una scelta v2 per delega, diversa dalla proposta precedente per `aux_seq`.
+Si usa il tick dell'evento L0 sorgente per il decadimento L3 e la sua seq
+per la salienza L2; la decisione è apposta successivamente e cita l'AUX che
+ha registrato l'estrazione. Il manifest deve fissare anche il caso in cui
+una dichiarazione abbia più sorgenti e dimostrare che i punteggi attesi
+sono calcolati secondo questa stessa regola. L2.27 v1 resta invariata per
+log v1; questa deduplicazione costituisce una nuova regola v2, non una sua
+reinterpretazione retroattiva.
+
+### 13.3 S6 e L4
+
+Si adottano nella bozza le decisioni S6 della §12: append atomica in memoria
+della coppia close/summary consecutiva, summary vuoto obbligatorio, nessun
+evento non-L2 prima della chiusura. I codici della §12.4 sono la proposta
+di errori v2; la precedenza è: fase/finestra, schema, riferimenti e infine
+contenuto/hash. Un log esterno interrotto tra close e summary è invalido.
+
+L4 v2 usa gli schemi del catalogo §13.1. `self_hash` è SHA-256 minuscolo
+del documento canonico senza il campo `self_hash`, con `head_hash` uguale
+all'hash del narrate AUX appaiato al momento del controllo snapshot; la
+coppia narrate/snapshot deve restare immediatamente consecutiva. I template
+L4.3 restano invariati nella forma; il campo `seq` nel testo è la seq
+globale dell'evento che genera l'affermazione. La bibliografia narrativa
+comprende le seq citate nei template, mentre le fonti L0 esterne sono
+ricostruibili attraverso `provenance`. Il confronto fra documenti esclude
+`head_hash` e `self_hash` e include `schema_version` e gli `statements`
+completi (`at`, `sources`, `text`); ogni hash è verificato separatamente.
+Se differenze irrilevanti cambiano le seq citate, non si pretende
+l'uguaglianza letterale degli statements: la fixture deve preservare le seq
+citate oppure dichiarare non applicabile quel confronto. Lo snapshot
+diagnostico dopo L5 resta esterno e non è un evento L4.
+
+### 13.4 L5: adattamento esplicito
+
+Ogni membro dell'array `observations` è un oggetto esatto con `agente`,
+`soggetto`, `ordine_tom`, `proposizione`, `confidenza`, `sources`.
+`agente` e `soggetto` sono stringhe UTF-8 non vuote; `ordine_tom` è `0` o
+`1`; `confidenza` è un intero `0..=1000`. `proposizione` è la stringa
+decimale canonica di un intero `i64 ≥ 0`, senza segno né zeri iniziali salvo
+`"0"`; `sources` è array non vuoto ordinato e deduplicato di seq L0
+precedenti, utilizzate come ancore temporali e non come fonti del contenuto.
+Per un AUX observation l'unione delle `sources` dei membri è
+uguale alle `sources` esterne. Questo profilo binario di ordine ToM e la
+scala di confidenza sono scelte v2 per delega, non requisiti della legge
+L5 storica.
+
+Per l'ordine `0`, il modello statistico L5 dell'identità `agente` usa come
+`comportamento` l'intero rappresentato da `proposizione`: la conversione è
+decimale esatta, senza saturazione o default; `confidenza` e `soggetto`
+restano dati di provenienza e non pesano i contatori. L'id dell'agente
+segue la formula L5.3; si conserva il tie-break dell'argmax. Per l'ordine
+`1`, il dato registra che `agente` attribuisce a `soggetto` la proposizione;
+è una vista derivata dalle sole osservazioni registrate, non accesso alla
+mente di alcuno. Non aggiorna il contatore di ordine `0`. Il contratto di
+secondo ordine e i suoi oracoli devono specificare le osservazioni effettive
+da confrontare, senza assumere che una proiezione d'identità dimostri una
+credenza indipendente. La fonte dichiarata del contenuto è la fixture
+esterna preregistrata nella §13.8; l'ancora L0 non è presentata come causa.
+
+### 13.5 Versione, API e compatibilità
+
+Il manifest esterno obbligatorio dichiara `protocol_version` stringa `"1"`
+o `"2"`; versione mancante, sconosciuta o incompatibile col contenuto è
+errore. Un log `"1"` non contiene AUX ed è elaborato con la semantica
+storica; un log `"2"` accetta solo rappresentazioni ausiliarie v2 per
+estrazioni e decisioni L1–L5, senza vecchi payload `nodes`, `edges`, `l2`,
+`l3`, `l4`, `l5`, `osservazioni` su eventi non-AUX. Un log che mescola
+queste rappresentazioni è rifiutato, non deduplicato euristicamente. Il
+trattamento di log privi di manifest è rifiuto di input non dichiarato,
+non cancellazione né alterazione dell'artefatto storico.
+
+Si scelgono API separate e nominate per versione; i nomi concreti dei
+moduli/funzioni e il catalogo completo degli errori di compilazione sono da
+redigere come specifica API prima della firma, non costituiscono autorizzazione
+a modificare le API v1. I nuovi reader devono verificare i log v1 dichiarati
+senza riscriverli né cambiarne gli hash; i reader v1 possono rifiutare AUX.
+Non si afferma compatibilità fino a verifica indipendente.
+
+### 13.6 Gate, identificativi, replay e artefatti
+
+Gli ID di scenario/run/interazione sono SHA-256 minuscolo dei rispettivi
+documenti canonici con un campo discriminante di dominio (`scenario`,
+`run`, `interaction`) e campi fissati nel manifest; i campi esatti non sono
+ancora preregistrati. Manifest e oracoli sono congelati prima della run con
+SHA-256 sui loro byte canonici; i digest degli artefatti generati sono
+calcolati dopo la run e registrati nel riepilogo, non predetti. Il riepilogo
+JSONL di ogni coppia deve contenere scenario ID, run ID, seed, esiti per
+braccio, delta, validità, motivo di invalidità o `null`, e hash dei due log;
+il log unico di verifica registra anche versioni, commit, gate, errori e
+timeout. Schema byte-per-byte, percorso e regola di digest del riepilogo
+restano da congelare nel manifest.
+
+Gate negativo: alterare un byte di payload della copia negativa senza
+ricalcolare l'hash; rifiuto `digest_mismatch` prima della valutazione e zero
+run avviate danno PASS del gate. Accettazione o motivo diverso danno FAIL;
+il rifiuto atteso non è una run invalida. Il timeout interrompente è 5
+secondi per coppia, misurati dall'avvio alla terminazione del processo della
+coppia; nessuna esclusione dal resoconto. Il replay indipendente ricalcola
+le decisioni dal prefisso di ogni braccio e confronta ogni azione e reward,
+oltre a catena e round-trip canonico; non basta la sola fold del reward.
+L'implementazione del verificatore va specificata e revisionata prima della
+prova. Il test complessivo passa solo con gate e oracoli rispettati e tutte
+le run previste valide, senza conclusione di efficacia statistica.
+
+### 13.7 Lavoro ancora necessario, senza inventare risultati
+
+Restano da preparare: sequenza completa di manifest con payload, tick e seq
+effettivi; fixture di finestra L2, archive/recall L3 e ToM L5; semantica
+verificabile delle ancore L0 e delle fixture esterne; nomi e firme delle
+API; schemi di ID e riepilogo; calcolo indipendente e preregistrazione di
+tutti gli oracoli e degli hash. La sola delega progettuale non determina
+questi valori né approva l'emendamento completo. Nessuna legge, codice o
+test è cambiato; nessuna esecuzione è avviata da questa bozza.
+
+### 13.8 Osservazioni: ancora L0 e fonte esterna distinte
+
+**Scelta progettuale per delega, da ratificare:** per la prova esplorativa la
+fonte dichiarata dei contenuti sociali è una fixture esterna preregistrata,
+non il payload dello stub PRNG. Il `sources` di ciascuna osservazione
+contiene esattamente la seq dell'ultimo `STATE` completato precedente
+all'AUX, oppure la seq di GENESIS per un'osservazione apposta dopo genesi a
+tick 0. È un'**ancora temporale e di contesto**: non afferma che l'evento
+contenga, generi o attesti l'osservazione. L'unione delle ancore dei membri
+coincide con le `sources` esterne dell'AUX. L'ammissibilità di GENESIS come
+ancora è limitata a L5 e non cambia `origin_seq` o le fonti L1.
+
+Il manifest preregistrato elenca per ogni fixture un `fixture_id` stringa
+non vuota e univoca, un percorso relativo, il digest SHA-256 esadecimale
+minuscolo e l'ancora L0 attesa. Ogni fixture è un oggetto JSON canonico
+UTF-8, senza BOM né newline finale, con la sola chiave `observations` e un
+array conforme alla §13.4. Il digest copre i byte esatti del file; la
+fixture non contiene il digest del manifest, evitando riferimenti circolari.
+
+Per `L5/observation`, `provenance` è l'oggetto canonico chiuso
+`{"external":{"fixture_id":"…","sha256":"…"},"members":[],"refs":[]}`.
+L'identificativo e il digest devono corrispondere alla voce preregistrata.
+Il driver legge la fixture all'esterno e appone l'AUX; lo stub
+`cycle::run_cycle` e il suo SENSE restano invariati. Le viste consumano il
+log senza leggere il file: il controllo della fixture è un gate esterno.
+
+Prima della valutazione, il gate verifica la canonicità dei byte, il digest,
+l'esistenza e correttezza dell'ancora e la corrispondenza byte per byte fra
+fixture e JSON nella stringa `data` dell'AUX. Il controllo del digest
+precede quello di canonicità, così la fixture negativa alterata con digest
+originale è rifiutata come `digest_mismatch`; il rifiuto previsto è PASS del
+gate, non una run invalida. Gli altri errori e la loro precedenza completa
+restano da definire nel catalogo S3. Fixture, manifest e log di verifica
+vanno conservati per ripetere il controllo senza una fonte viva.
+
+Per questo gate si propone il seguente ordine deterministico dei controlli,
+con arresto al primo errore: manifest/voce non validi
+`fixture_manifest_invalid`; file assente o illeggibile `fixture_unreadable`;
+digest diverso `digest_mismatch`; JSON non canonico o schema errato
+`fixture_invalid`; ancora inesistente, non ammessa o diversa da quella
+attesa `fixture_anchor_mismatch`; `data` o `provenance.external` non
+corrispondenti `fixture_binding_mismatch`. Il confronto del digest usa la
+voce del manifest, non un digest fornito dalla fixture o dall'AUX. Prima di
+questi controlli non parte alcuna valutazione. I nomi sono proposte v2,
+non errori già implementati; restano da integrare nel catalogo generale e
+da definire le regole di accesso sicuro ai percorsi.
+
+Il digest verifica la corrispondenza ai byte preregistrati, non la verità,
+l'autenticità o la provenienza da un agente reale. Lo scenario resta
+sintetico ed esplorativo. La scelta non è una firma né una dimostrazione di
+implementabilità: payload, ancore, catalogo errori, manifest e oracoli
+restano da completare e approvare prima dello stress test.
+
+### 13.9 Interfacce e frontiere v2 — proposta di contratto
+
+Le interfacce v1 rimangono inalterate. Si propone un modulo separato `v2`
+con operazioni a sola lettura `verify_log`, `build_l1`, `build_l2`,
+`build_l3`, `build_l4`, `build_l5` e `evaluate_l2`, `evaluate_l3`,
+`evaluate_l5`: ricevono un log dichiarato v2 e, per le valutazioni, una base
+con lunghezza e hash del prefisso; restituiscono rispettivamente vista o
+decisioni, oppure un errore esplicito. Non accedono a file, orologio o RNG
+e non scrivono nel log. Il chiamante serializza e appone le decisioni;
+`append_l2_close_summary` segue l'atomicità in memoria della §12.1.
+I nomi sono proposti, non firme Rust già disponibili. Tipi concreti,
+validazione dei singoli payload e compatibilità devono essere completati
+prima della firma e testati dopo l'implementazione.
+
+Il verificatore esterno riceve manifest, fixture e log come input distinti:
+controlla protocollo e integrità, poi i binding fixture/AUX della §13.8 e
+infine invoca le viste. L'accettazione di un log isolato non va presentata
+come verifica del binding con una fixture che il verificatore non possiede.
+Un percorso fixture deve essere relativo alla directory preregistrata,
+senza componenti `..` né link simbolici attraversati: il driver deve rifiutare
+accessi che escano dalla directory. La verifica di integrità non autentica
+la persona o il processo che ha predisposto gli input.
+
+Le fonti L1 sono una questione distinta dalle ancore L5: non si può inferire
+che un valore PRNG contenga semanticamente un nodo o un arco. Per le
+estrazioni del futuro manifest occorre preregistrare una trasformazione
+deterministica dalla sorgente L0 ai membri L1 e verificarne input e output;
+`origin_seq` resta la minima seq L0 della prima dichiarazione secondo §13.2.
+Senza tale trasformazione e i relativi casi completi, la sequenza integrata
+L1–L4 non va dichiarata validata.
+
+### 13.10 Artefatti esterni e identificativi — proposta da ratificare
+
+Per evitare cicli fra digest, il manifest eseguibile futuro sarà JSON
+canonico UTF-8 senza BOM né newline finale; un file separato conterrà il suo
+SHA-256, senza includerlo nel manifest stesso. Le fixture e i piani
+preregistrati sono riferiti nel manifest tramite percorso relativo e SHA-256
+dei rispettivi byte. Gli oracoli preregistrati sono un file separato
+referenziato dal manifest con digest; non contengono il digest del manifest.
+Il riepilogo della run registra il digest del manifest e quelli degli
+artefatti prodotti **dopo** la run, senza essere referenziato dal manifest.
+I contenuti effettivi e le regole complete del JSON canonico vanno fissati
+e revisionati prima del congelamento; i Markdown attuali non sono quel
+manifest eseguibile.
+
+Si propongono ID SHA-256 esadecimali minuscoli del JSON canonico UTF-8 dei
+seguenti oggetti chiusi; `scenario_key` è stringa non vuota preregistrata,
+`seed` intero, `arm` una delle stringhe indicate:
+
+```text
+scenario_id    = SHA256({"domain":"ariadne/scenario/v1","scenario_key":...})
+run_id         = SHA256({"domain":"ariadne/run/v1","scenario_id":...,"seed":...})
+interaction_id = SHA256({"arm":...,"domain":"ariadne/interaction/v1","run_id":...,"task_index":...})
+```
+
+`arm` è `"memoria"` o `"controllo"`; `task_index` va da 0 a 119. Gli ID
+sono metadati esterni: non aggiungono campi ai payload a schema chiuso.
+La chiave di scenario deve essere univoca tra scenari preregistrati; l'ID
+non attesta l'unicità globale né l'autenticità del contenuto.
+
+Per ogni coppia si propone una riga JSONL canonica con chiavi esatte
+`control_log_sha256`, `control_test_milli_sum`, `delta_test_milli_mean`,
+`error`, `memory_log_sha256`, `memory_test_milli_sum`, `run_id`,
+`scenario_id`, `seed`, `valid`: somme intere di 40 reward, delta intero
+`(memory_test_milli_sum-control_test_milli_sum)/40` per coppie valide,
+`error=null` se valida, altrimenti codice stringa e campi numerici/hash non
+disponibili `null`. La divisione è esatta perché ogni reward è multiplo di
+1000. Ogni riga termina con LF; il digest dell'artefatto copre i byte JSONL
+completi, LF inclusi, in ordine di seed crescente. L'aggregato statistico
+L6 resta distinto: riporta anche eventuali valori float secondo la legge L6
+nel proprio report, mai nei payload L0. Nessun record invalido viene omesso.
+
+## 14. Profilo attuato dopo autorizzazione esplicita
+
+Il successivo consenso «sì vai» autorizza definizione delle regole v2
+mancanti, codice e test Docker, lasciando lo stress test sospeso. Il
+contratto del profilo effettivamente implementato è ora
+`AUX_V2_PROFILO_IMPLEMENTATO.md`, con codice separato `src/aux_v2/` e test
+`tests/aux_v2.rs`. Non è una modifica delle leggi firmate v1 né una
+ratifica del manifest dello stress test.
+
+In particolare, i select v2 usano ID L1 in `ups` e `downs` per risolvere
+le origini coincidenti, mentre summary mantiene origini e ID degli espulsi
+effettivi. Il profilo attuato supporta una fonte per estrazione e un select
+per finestra; non implementa tutte le possibilità delle §§10–13. I limiti
+e le differenze sono elencati nel contratto. Il prefisso L5 e il piano
+L1–L4 di queste bozze non sono automaticamente un unico manifest approvato.

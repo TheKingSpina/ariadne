@@ -1,0 +1,435 @@
+{
+  "attesi": {
+    "hash_genesis": "4649d1f4889db0378e963bd51f9d787eea98dc42886e66e51973f28e593526b7",
+    "l3_tick27": {
+      "archive": {
+        "at": 107,
+        "id": "c735556705ac4d4485024861e77e1c1b2d569542c8d5a4359f5ed96334aa8feb",
+        "origin_seq": 3
+      },
+      "promote": {
+        "at": 107,
+        "id": "45aba7c6bf7186d413becacb7f88e22665b4b50b25829e668df7435020664ee0",
+        "origin_seq": 3
+      }
+    },
+    "l3_tick28": {
+      "recall": {
+        "at": 117,
+        "id": "c735556705ac4d4485024861e77e1c1b2d569542c8d5a4359f5ed96334aa8feb",
+        "origin_seq": 3
+      }
+    },
+    "score_l2_tick2": {
+      "alfa": 18874368,
+      "beta": 2097152
+    },
+    "select_tick1": {
+      "at": 6,
+      "downs": [],
+      "ups": [
+        "45aba7c6bf7186d413becacb7f88e22665b4b50b25829e668df7435020664ee0"
+      ]
+    },
+    "select_tick2": {
+      "at": 20,
+      "downs": [
+        "45aba7c6bf7186d413becacb7f88e22665b4b50b25829e668df7435020664ee0"
+      ],
+      "ups": [
+        "c735556705ac4d4485024861e77e1c1b2d569542c8d5a4359f5ed96334aa8feb"
+      ]
+    },
+    "summary_tick2": {
+      "expulsions": [
+        3
+      ],
+      "text": "45aba7c6bf7186d413becacb7f88e22665b4b50b25829e668df7435020664ee0"
+    }
+  },
+  "fixture": {
+    "byte": 35858,
+    "eventi": 121,
+    "percorso": "preparazione_stress/fixtures/aux_v2_small/expected.jsonl",
+    "sha256": "690831b39906070c40eff25e64092d4c8f005a04d017ed4cb347d514f98cd0b4"
+  },
+  "generator": {
+    "data": "2026-11-05",
+    "mandato": "2026-11-05-wp3-oracolo.md",
+    "name": "aux_v2_oracle.py",
+    "version": 1
+  },
+  "negativi": [
+    {
+      "atteso": "Mismatch",
+      "file": "select_ups_ricalcolata.jsonl",
+      "sha256": "d851a3579ef4409a1f799f5f1ab3d153cb27671e9f646c1b4ed6f4d9bf1f43fb"
+    },
+    {
+      "atteso": "Chain",
+      "file": "un_byte_alterato.jsonl",
+      "sha256": "f4408ffd217883785e9466fe8ae026991d2e0b57b408bb518b2334fbdcf381fa"
+    },
+    {
+      "atteso": "Schema",
+      "file": "crlf.jsonl",
+      "sha256": "25625dad545de9372f8e298923f98968267a523152c2bc9cc1f554d942da77fa"
+    },
+    {
+      "atteso": "Schema",
+      "file": "senza_lf_finale.jsonl",
+      "sha256": "0fb9c5f9c66ea04a593ee141e67052869444fe2e5e5ae62cf3777b76d262cb8c"
+    },
+    {
+      "atteso": "Schema",
+      "file": "riga_vuota_intermedia.jsonl",
+      "sha256": "71cfdf339bc9c6c34d27ee2833f9e8118d2c940e3c4423952628730700f83450"
+    },
+    {
+      "atteso": "Schema",
+      "file": "protocol_version_errato.jsonl",
+      "sha256": "4dbabd4d96f98214c7c4b7cb4986e936f455e84dcdc5746b96bf4ad420a79d48"
+    },
+    {
+      "atteso": "Mismatch",
+      "file": "summary_text_ricalcolata.jsonl",
+      "sha256": "032fd6e88f760361267a1e29411c988c4bb2a778993f240558a3084962048c35"
+    },
+    {
+      "atteso": "Mismatch",
+      "file": "snapshot_self_hash_ricalcolata.jsonl",
+      "sha256": "b4f6acb5f5e748f5ceaa353e8d91a2806f98e4c906cbc9350d9bc86848090b46"
+    },
+    {
+      "atteso": "IncompleteBatch",
+      "file": "prefix_dopo_barrier_open.jsonl",
+      "sha256": "39a7a54baa3f63e711ba0e274c8d0ac9f218c4c534c7a49cf7fcb3cd398518eb"
+    },
+    {
+      "atteso": "Mismatch",
+      "file": "prefix_dopo_barrier_close.jsonl",
+      "sha256": "199e9977b96fd836d1867bf5ecd91e11518a34a34410e37175d188269c92618c"
+    },
+    {
+      "atteso": "accettato: prefisso open/select ancora aperto",
+      "file": "prefix_dopo_barrier_select.jsonl",
+      "sha256": "cf0c03efca73bd7219d97cf9f2dc407dae07980d1c523db75513ba2cc813b997"
+    }
+  ],
+  "nodi": {
+    "alfa": "c735556705ac4d4485024861e77e1c1b2d569542c8d5a4359f5ed96334aa8feb",
+    "beta": "45aba7c6bf7186d413becacb7f88e22665b4b50b25829e668df7435020664ee0"
+  },
+  "note": [
+    "expected.jsonl è congelato a build; tests/aux_v2_independent.rs non lo",
+    "rigenera e fallisce se il file manca o il digest non coincide.",
+    "prefix_dopo_barrier_select.jsonl è accettato dal replay come prefisso",
+    "ancora aperto ed è coperto dal test Rust a parte la lista NEGATIVES."
+  ],
+  "parametri": {
+    "H": 1,
+    "T": 1,
+    "k": 1,
+    "seed": 1042,
+    "tau": 5
+  },
+  "scenario": "aux_v2_small",
+  "tabella_seq": [
+    {
+      "a": 0,
+      "atteso": "seed 1042, hash 4649d1f4…26b7",
+      "da": 0,
+      "operazione": "GENESIS",
+      "tick": [
+        0,
+        0
+      ]
+    },
+    {
+      "a": 1,
+      "atteso": "k=1, tau=5",
+      "da": 1,
+      "operazione": "L2/config",
+      "tick": [
+        0,
+        0
+      ]
+    },
+    {
+      "a": 2,
+      "atteso": "H=1, T=1",
+      "da": 2,
+      "operazione": "L3/config",
+      "tick": [
+        0,
+        0
+      ]
+    },
+    {
+      "a": 5,
+      "da": 3,
+      "operazione": "ciclo L0",
+      "tick": [
+        1,
+        1
+      ]
+    },
+    {
+      "a": 6,
+      "atteso": "alfa, beta, arco; sources=[3]",
+      "da": 6,
+      "operazione": "L1/extract",
+      "tick": [
+        1,
+        1
+      ]
+    },
+    {
+      "a": 8,
+      "atteso": "at=6",
+      "da": 7,
+      "operazione": "L4 narrate/snapshot",
+      "tick": [
+        1,
+        1
+      ]
+    },
+    {
+      "a": 9,
+      "da": 9,
+      "operazione": "L2 barrier open",
+      "tick": [
+        1,
+        1
+      ]
+    },
+    {
+      "a": 10,
+      "atteso": "at=6; ups=[beta]; downs=[]",
+      "da": 10,
+      "operazione": "L2/select",
+      "tick": [
+        1,
+        1
+      ]
+    },
+    {
+      "a": 11,
+      "da": 11,
+      "operazione": "L2 barrier close",
+      "tick": [
+        1,
+        1
+      ]
+    },
+    {
+      "a": 12,
+      "atteso": "expulsions=[]; text=\"\"",
+      "da": 12,
+      "operazione": "L2/summary",
+      "tick": [
+        1,
+        1
+      ]
+    },
+    {
+      "a": 16,
+      "da": 13,
+      "operazione": "L4 select + summary",
+      "tick": [
+        1,
+        1
+      ]
+    },
+    {
+      "a": 19,
+      "da": 17,
+      "operazione": "ciclo L0",
+      "tick": [
+        2,
+        2
+      ]
+    },
+    {
+      "a": 20,
+      "atteso": "alfa; sources=[17]; nessun L4",
+      "da": 20,
+      "operazione": "L1/extract",
+      "tick": [
+        2,
+        2
+      ]
+    },
+    {
+      "a": 21,
+      "atteso": "alfa, at=20, origin_seq=3",
+      "da": 21,
+      "operazione": "L3/promote",
+      "tick": [
+        2,
+        2
+      ]
+    },
+    {
+      "a": 23,
+      "da": 22,
+      "operazione": "L4 promote",
+      "tick": [
+        2,
+        2
+      ]
+    },
+    {
+      "a": 24,
+      "da": 24,
+      "operazione": "L2 barrier open",
+      "tick": [
+        2,
+        2
+      ]
+    },
+    {
+      "a": 25,
+      "atteso": "at=20; ups=[alfa]; downs=[beta]",
+      "da": 25,
+      "operazione": "L2/select",
+      "tick": [
+        2,
+        2
+      ]
+    },
+    {
+      "a": 26,
+      "da": 26,
+      "operazione": "L2 barrier close",
+      "tick": [
+        2,
+        2
+      ]
+    },
+    {
+      "a": 27,
+      "atteso": "expulsions=[3]; text=beta",
+      "da": 27,
+      "operazione": "L2/summary",
+      "tick": [
+        2,
+        2
+      ]
+    },
+    {
+      "a": 31,
+      "da": 28,
+      "operazione": "L4 select + summary",
+      "tick": [
+        2,
+        2
+      ]
+    },
+    {
+      "a": 103,
+      "atteso": "72 eventi",
+      "da": 32,
+      "operazione": "24 cicli L0",
+      "tick": [
+        3,
+        26
+      ]
+    },
+    {
+      "a": 106,
+      "da": 104,
+      "operazione": "ciclo L0",
+      "tick": [
+        27,
+        27
+      ]
+    },
+    {
+      "a": 107,
+      "atteso": "beta; sources=[104]",
+      "da": 107,
+      "operazione": "L1/extract",
+      "tick": [
+        27,
+        27
+      ]
+    },
+    {
+      "a": 108,
+      "atteso": "alfa, at=107",
+      "da": 108,
+      "operazione": "L3/archive",
+      "tick": [
+        27,
+        27
+      ]
+    },
+    {
+      "a": 110,
+      "da": 109,
+      "operazione": "L4 archive",
+      "tick": [
+        27,
+        27
+      ]
+    },
+    {
+      "a": 111,
+      "atteso": "beta, at=107",
+      "da": 111,
+      "operazione": "L3/promote",
+      "tick": [
+        27,
+        27
+      ]
+    },
+    {
+      "a": 113,
+      "da": 112,
+      "operazione": "L4 promote",
+      "tick": [
+        27,
+        27
+      ]
+    },
+    {
+      "a": 116,
+      "da": 114,
+      "operazione": "ciclo L0",
+      "tick": [
+        28,
+        28
+      ]
+    },
+    {
+      "a": 117,
+      "atteso": "alfa; sources=[114]",
+      "da": 117,
+      "operazione": "L1/extract",
+      "tick": [
+        28,
+        28
+      ]
+    },
+    {
+      "a": 118,
+      "atteso": "alfa, at=117",
+      "da": 118,
+      "operazione": "L3/recall",
+      "tick": [
+        28,
+        28
+      ]
+    },
+    {
+      "a": 120,
+      "da": 119,
+      "operazione": "L4 recall",
+      "tick": [
+        28,
+        28
+      ]
+    }
+  ]
+}

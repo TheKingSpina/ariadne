@@ -1,9 +1,8 @@
 {
   "$schema": "https://opencode.ai/config.json",
   "default_agent": "orchestrator",
-  // Profondità di annidamento subagent: consente orch -> Router -> ruoli
-  // operative (delega annidata, policy routing v1). Autorizzazione umana
-  // 31/10/2026 dopo blocco "Subagent depth limit reached (1)".
+  // Conservata l'impostazione preesistente; la nuova configurazione non
+  // richiede il vecchio Router né autorizza routing automatico dei modelli.
   "experimental": {
     "subagent_depth": 2
   }

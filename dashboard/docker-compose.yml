@@ -1,0 +1,27 @@
+# Solo ambiente di test locale: nessuna autenticazione client, CORS aperto
+# sull'endpoint MCP. Le porte restano vincolate a 127.0.0.1.
+services:
+  ariadne-dashboard:
+    container_name: ariadne-dashboard
+    build:
+      context: ..
+      dockerfile: dashboard/Dockerfile
+    image: ariadne-dashboard-local
+    ports:
+      - "127.0.0.1:8080:8080"
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - ariadne-dashboard-data:/data
+    restart: unless-stopped
+    stop_grace_period: 20s
+    init: true
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/healthz', timeout=2)"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+      start_period: 15s
+
+volumes:
+  ariadne-dashboard-data:
+    name: ariadne-dashboard-data

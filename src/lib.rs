@@ -18,6 +18,7 @@
 //! `tick` è un contatore logico di ciclo, mai un timestamp.
 
 pub mod cycle;
+pub mod aux_v2;
 mod event;
 pub mod identity;
 mod log;

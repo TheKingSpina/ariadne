@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="it">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Ariadne · Osservatorio</title>
+  <link rel="stylesheet" href="/style.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand"><span class="brand-icon">✳</span><div><strong>ARIADNE</strong><small>OSSERVATORIO LOCALE</small></div></div>
+    <div class="side-label">SPAZIO DI LAVORO</div>
+    <div class="side-active"><span>◫</span> Registro <span class="side-dot"></span></div>
+    <div class="sidebar-bottom"><span class="status-dot"></span><div>Archivio locale<small>Persistente · append-only</small></div></div>
+  </aside>
+  <main>
+    <header class="topbar"><span>SPAZIO DI LAVORO <span class="slash">/</span> <strong>REGISTRO</strong></span><span class="top-status"><span class="status-dot"></span> LOCALE</span></header>
+    <div class="content">
+      <div class="hero"><div><div class="eyebrow">MEMORIA OSSERVABILE <span>✳</span> SISTEMA LOCALE</div><h1>Il filo della memoria<span>.</span></h1><p>Esplora i registri, segui gli eventi e osserva le viste generate da Ariadne.</p></div><button id="refresh" class="secondary">↻ &nbsp; Aggiorna</button></div>
+      <div class="notice"><span>ⓘ</span><div><strong>Una vista fedele, non una fonte di verità.</strong> La catena verifica l'integrità dei dati registrati, non l'autenticità dei fatti.</div></div>
+      <section class="summary"><div class="card"><div class="card-label">REGISTRI ARCHIVIATI <span>◫</span></div><div class="card-value" id="log-count">—</div><small>Log disponibili</small></div><div class="card"><div class="card-label">EVENTI TOTALI <span>↗</span></div><div class="card-value" id="event-count">—</div><small>Nel database locale</small></div><div class="card"><div class="card-label">REGISTRO ATTIVO <span>◎</span></div><div class="card-value text-value" id="active-name">Nessuno</div><small id="active-detail">Seleziona un registro</small></div></section>
+      <section class="panel diagnostics-panel"><div class="panel-header"><div><div class="eyebrow">STATO E DIAGNOSTICA</div><h2>Servizi locali</h2></div><span id="diag-pill" class="pill muted">—</span></div><div class="diag-grid"><div><span>Archivio</span><strong id="diag-archive">—</strong></div><div><span>MCP HTTP</span><strong id="diag-mcp">—</strong></div><div><span>Ultimo aggiornamento</span><strong id="diag-updated">—</strong></div><div><span>Versioni registro</span><strong id="diag-versions">—</strong></div></div><p class="diag-note">La raggiungibilità dei servizi non dimostra la conformità verificata del protocollo, la verità dei fatti né l'autenticità. <a href="#diagnostics-json">Dettagli</a>.</p><details class="graph-raw" id="diagnostics-json"><summary>Mostra diagnostica JSON</summary><pre class="json-view" id="diag-raw">—</pre></details></section>
+      <section class="panel memories-panel"><div class="panel-header"><div><div class="eyebrow">MEMORIA TESTUALE</div><h2>Ricordi registrati</h2></div><span class="pill">APPEND-ONLY</span></div><p class="section-sub">Dichiarazioni salvate dagli agenti, separate dai log L0–L5. Non sono fatti verificati.</p><form id="memory-search" class="search-form"><input id="memory-query" type="search" maxlength="200" placeholder="Cerca nei ricordi, fonti o etichette" aria-label="Cerca ricordi"><input id="memory-tag" type="search" maxlength="64" placeholder="Etichetta esatta" aria-label="Filtra per etichetta"><input id="memory-source" type="search" maxlength="500" placeholder="Fonte contiene" aria-label="Filtra per fonte"><input id="memory-from" type="date" aria-label="Dal giorno"><input id="memory-to" type="date" aria-label="Al giorno"><label class="check"><input id="memory-current" type="checkbox"> Solo attuali</label><button class="secondary" type="submit">Cerca</button></form><div id="memory-list" class="memory-list"><div class="empty">Caricamento…</div></div></section>
+      <div class="workspace">
+        <section class="panel logs-panel"><div class="panel-header"><div><div class="eyebrow">ARCHIVIO</div><h2>I tuoi registri</h2></div><span class="pill" id="count-pill">0</span></div><p class="section-sub">Seleziona un registro per esplorarne il contenuto.</p><div id="log-list" class="log-list"><div class="empty">Nessun registro salvato.</div></div><div class="import-note"><strong>Come arrivano i dati?</strong><p>I log vengono inseriti tramite l'API locale di archiviazione. Nessun dato viene creato automaticamente.</p></div></section>
+        <section class="panel detail-panel"><div class="panel-header"><div><div class="eyebrow">ESPLORA</div><h2 id="detail-title">Dettaglio registro</h2></div><span id="version-pill" class="pill muted">NESSUN LOG</span></div><div id="detail-empty" class="detail-empty"><div class="empty-icon">⌘</div><strong>Il tuo filo inizia qui</strong><p>Scegli un registro dall'archivio per vedere eventi e viste.</p></div><div id="detail-content" hidden><div class="head-label">HASH DI TESTA</div><code id="head-hash">—</code><div class="tabs"><button class="tab selected" data-view="events">Eventi</button><button class="tab" data-view="graph">Grafo</button><button class="tab" data-view="active">Attivi</button><button class="tab" data-view="memory">Memoria</button><button class="tab" data-view="self">Narrazione</button></div><div id="result" class="result"></div></div></section>
+      </div>
+      <footer>ARIADNE <span>✳</span> OSSERVATORIO LOCALE <span class="footer-right">Il registro è append-only · Nessun MCP nella dashboard</span></footer>
+    </div>
+  </main>
+</body>
+</html>

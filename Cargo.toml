@@ -16,3 +16,10 @@ sha2 = "0.10"
 [[test]]
 name = "l0_event_log"
 path = "tests/l0_event_log.rs"
+
+# Oracolo indipendente del replay AUX v2 (mandato WP3, 2026-11-05): i test
+# confrontano i byte del log costruito con la sola API pubblica con il
+# fixture congelato in preparazione_stress/fixtures/aux_v2_small.
+[[test]]
+name = "aux_v2_independent"
+path = "tests/aux_v2_independent.rs"

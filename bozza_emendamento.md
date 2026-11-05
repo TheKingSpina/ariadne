@@ -247,4 +247,84 @@ conseguenze descrivono ciò che resta indeterminato in assenza di scelta.
 `TBD-01`, `TBD-02`, `TBD-03`, `TBD-04`, `TBD-05`, `TBD-06`, `TBD-07`,
 `TBD-08`, `TBD-09`, `TBD-10`, `TBD-11`, `TBD-12`, `TBD-13`, `TBD-14`,
 `TBD-15`, `TBD-C1`, `TBD-C2`, `TBD-C3`, `TBD-C4`, `TBD-C5`, e la data
-dell'eventuale firma (**TBD**). Nessuno è stato risolto in questa bozza.
+dell'eventuale firma (**TBD**). Le risposte e le proposte successive sono
+riportate nell'appendice: non costituiscono approvazione dell'emendamento;
+gli aspetti non ancora specificati restano TBD.
+
+## Appendice — risposte di kingspina e proposta successiva
+
+**Stato: testo da incorporare e approvare; nessun via libera di esecuzione.**
+Questa appendice registra quanto comunicato da kingspina senza modificare le
+leggi firmate né presentare la bozza come approvata. Le domande precedenti
+sono conservate come traccia storica, non come affermazione che tutte siano
+prive di risposta. I dettagli non specificati restano TBD.
+
+1. Seed L0 principale `1042`; seed L6 separati `1000–1099`.
+2. Sequenza deterministica fissata in un manifest, con tick e ordine
+   espliciti, genesi senza draw e un ciclo L0 valido per tick. Sequenza
+   esatta e manifest immutabile: **TBD**.
+3. Ciclo L0 e task L6 distinti, collegati con `scenario_id` e identificativi
+   correlati, senza imporre una sequenza unica incompatibile. Formato e
+   valori esatti degli identificativi: **TBD**.
+4. Nodi e archi generati deterministicamente usando soltanto `kind`, `key`
+   e `rel` ammessi dalle specifiche; ordine e valori nel manifest. Valori e
+   regola esatti: **TBD**.
+5. Configurazione L2 una volta prima degli eventi di selezione: `k=3` e
+   `tau=5`. Nella proposta successiva kingspina chiarisce che `tau=5` è
+   espresso in **seq, non in tick**, coerentemente con
+   `spec/L2_SPEC_v0.3.md`, §5/L2.4. Posizione esatta nel manifest: **TBD**.
+6. Copertura L2: `select`, apertura e chiusura finestra, `summary`, confini
+   temporali e condizioni previste dalla legge. Fixture e oracoli: **TBD**.
+7. Configurazione L3 `T=1`, `H=10` tick prima delle transizioni. Posizione
+   esatta nel manifest: **TBD**.
+8. Esercitare `promote`, `archive`, `recall`, con soglia superata mediante
+   eventi distinti, decadimento previsto e sequela prescritta. Sequenza e
+   valori attesi esatti: **TBD**.
+9. Narrare e verificare snapshot dopo promozione, archiviazione e richiamo;
+   fonti e cutoff nel manifest. **Proposta successiva di kingspina:** dopo
+   l'aggiornamento L5 registrare uno *snapshot diagnostico*, senza chiamarlo
+   narrazione L4 né attribuirgli una regola L4 vigente. Struttura, contenuto,
+   provenienza e verifica di tale snapshot: **TBD**.
+10. Proposta di emendamento della checklist L4: confrontare campi semantici
+    escludendo `head_hash` e `self_hash`, verificando separatamente ciascun
+    hash. Formula normativa e procedura di verifica: **TBD**.
+11. Osservazioni fisse: `agente_alpha` comportamento `1`, `agente_beta`
+    comportamento `2`; ordine alternato soltanto secondo una sequenza
+    preregistrata. Sequenza precisa e numero di osservazioni: **TBD**.
+12. Coprire previsione, accordo, disaccordo, `model_update` e secondo ordine;
+    output attesi calcolati applicando la legge, non inventati a mano.
+    Metodo di calcolo indipendente e oracoli esatti: **TBD**.
+13. Log L0 principale separato dai due log L6, uno per braccio, collegati
+    tramite `scenario_id` e ID di run/interazione. Codifica e collocazione
+    dei collegamenti: **TBD**.
+14. Lo stress test attraversa L1–L5; L6 conserva la policy definita dalla
+    propria legge. Il risultato dimostra integrazione e invarianti, non che
+    L1–L5 causino un miglioramento di L6. Modalità esatta di attraversamento
+    e invarianti: **TBD**.
+15. Benchmark casuale `333` milli per tre classi; proposta di emendare
+    esplicitamente la formulazione `0,50` limitando la scelta alla prova
+    concordata. Formulazione finale e approvazione normativa: **TBD**.
+16. Timeout massimo di 5 secondi per coppia; log separati dei bracci e una
+    riga JSONL di riepilogo per coppia con esiti, delta, validità e hash
+    degli artefatti. Schema esatto, implementazione del timeout e relazione
+    con il log di verifica: **TBD**.
+17. PASS solo se tutti gli invarianti e gli oracoli preregistrati sono
+    rispettati; ogni violazione dà FAIL o run invalida. Nessuna conclusione
+    statistica di efficacia da questo stress test. Elenco di oracoli e
+    distinzione operativa FAIL/run invalida: **TBD**.
+18. Replay deterministico dell'intera sequenza di azioni e reward per ogni
+    braccio; confronto di output canonici e hash con i log originali.
+    Procedura e oracolo di confronto esatti: **TBD**.
+19. Fissare il commit esatto **dopo l'emendamento**; solo Docker con
+    `rust:1.85.1@sha256:e51d0265072d2d9d5d320f6a44dde6b9ef13653b035098febd68cce8fa7c0bc4`;
+    conservare manifest, log e artefatti con i rispettivi hash. Commit
+    successivo, percorsi e formato della registrazione degli hash: **TBD**.
+20. Gate positivo con fixture valida e appaiata; gate negativo mediante
+    alterazione di un evento o della sequenza appaiata, da rifiutare prima
+    della valutazione, con motivo registrato e zero run valide. Fixture,
+    alterazione e condizioni esatte: **TBD**.
+
+**Vincolo ribadito da kingspina:** nessuna modifica al progetto durante lo
+stress test, nessun fallback sull'host. L'esecuzione resta sospesa fino
+all'approvazione dell'emendamento; la presente appendice non è tale
+approvazione.
