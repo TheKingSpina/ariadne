@@ -1,7 +1,7 @@
 # Stress test L0–L6 — manifest v1
 
 **Data:** 5 novembre 2026.
-**Commit verificato:** `e5485225b1c26b2c70b36ecd4d8e2384c194d3b8` (working tree può contenere modifiche non committate).
+**Commit verificato:** `b50a82e618625d2dc5a1e0b4dde8b399634abde1` (working tree può contenere modifiche non committate).
 **Scenario:** `stress_l0_l6_v1`, seed 1042.
 **Comando:** `python3 preparazione_stress/esegui_stress_l0_l6.py`.
 
