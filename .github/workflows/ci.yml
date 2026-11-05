@@ -24,3 +24,5 @@ jobs:
         run: python3 -m unittest -v dashboard.test_backup dashboard.test_dashboard mcp.test_ariadne_server
       - name: Verify the independent AUX v2 oracle
         run: python3 preparazione_stress/aux_v2_oracle.py verify
+      - name: L6 cue-memory ablation
+        run: python3 preparazione_stress/ablation_l6.py
