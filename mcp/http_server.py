@@ -21,7 +21,7 @@ from ariadne_server import MAX_LINE, Protocol, VERSIONS, error_response  # noqa:
 
 ALLOW_ORIGIN = os.environ.get("ARIADNE_MCP_ALLOW_ORIGIN", "*")
 CORS_METHODS = "POST, GET, DELETE, OPTIONS"
-CORS_HEADERS = "Content-Type, Accept, Mcp-Session-Id"
+CORS_HEADERS = "Content-Type, Accept, Mcp-Session-Id, MCP-Protocol-Version, Last-Event-ID, Authorization"
 MAX_SESSIONS = 256
 
 
@@ -67,6 +67,8 @@ class Handler(BaseHTTPRequestHandler):
         return {"Access-Control-Allow-Origin": ALLOW_ORIGIN,
                 "Access-Control-Allow-Methods": CORS_METHODS,
                 "Access-Control-Allow-Headers": CORS_HEADERS,
+                "Access-Control-Allow-Private-Network": "true",
+                "Access-Control-Max-Age": "600",
                 "Access-Control-Expose-Headers": "Mcp-Session-Id"}
 
     def send_bytes(self, status, body, content_type="application/json; charset=utf-8", extra=None):

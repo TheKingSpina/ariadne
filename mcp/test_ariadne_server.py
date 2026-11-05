@@ -424,6 +424,8 @@ class HttpTransportTests(unittest.TestCase):
         self.assertEqual(headers.get("Access-Control-Allow-Origin"), self.http_server.ALLOW_ORIGIN)
         self.assertEqual(headers.get("Access-Control-Allow-Methods"), "POST, GET, DELETE, OPTIONS")
         self.assertIn("Mcp-Session-Id", headers.get("Access-Control-Allow-Headers", ""))
+        self.assertIn("MCP-Protocol-Version", headers.get("Access-Control-Allow-Headers", ""))
+        self.assertEqual(headers.get("Access-Control-Allow-Private-Network"), "true")
         oversized = b"1" * (self.http_server.MAX_LINE + 1)
         oversize_request = urllib.request.Request(f"http://127.0.0.1:{self.port}/mcp", data=oversized,
                                          headers={"Content-Type": "application/json", "Content-Length": str(len(oversized))}, method="POST")
