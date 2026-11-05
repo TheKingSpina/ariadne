@@ -2,6 +2,7 @@
 
 **Commit testato:** `b50a82e618625d2dc5a1e0b4dde8b399634abde1`
 **Esecuzione:** 2026-11-05T15:48Z
+**Addendum:** ablazione L6 eseguita sul commit `89d3171` (vedi sotto).
 **Esito complessivo:** **SUPERATO** per le prove eseguite, con i limiti
 dichiarati in fondo. Non è una certificazione di produzione né una prova di
 verità o di efficacia causale.
@@ -28,6 +29,7 @@ verità o di efficacia causale.
 | Test Python | `python3 -m unittest dashboard.test_backup dashboard.test_dashboard mcp.test_ariadne_server` | **53 passati, 0 falliti** |
 | Oracolo indipendente | `python3 preparazione_stress/aux_v2_oracle.py verify` | **ok**, 121 eventi, SHA-256 `690831b3…` |
 | Stress L0–L6 | `python3 preparazione_stress/esegui_stress_l0_l6.py` | **ok**, 847 eventi, SHA-256 `43accb3a…` |
+| Ablazione L6 | `python3 preparazione_stress/ablation_l6.py` | memoria cue **1000** vs controllo **335**; p = 1.98e-18 |
 | Handshake MCP | initialize + tools/list + list_logs | **ok**, 14 tool, protocollo `2025-03-26` |
 | Dashboard | `/api/diagnostics` | archivio e MCP raggiungibili; conformità `not_verified` |
 | Backup | export + verify nel container | **ok**, 2 registri, 54 eventi, digest `e6cdc121…` |
@@ -55,6 +57,26 @@ separata; digest e associazione delle fixture; posizioni L5, predict e
 `model_update`; ordine `archive` prima di `promote`; proiezioni finali
 ricostruite dal backend.
 
+## Ablazione L6 — efficacia
+
+**Report:** `reports/ABLAZIONE_L6.md`
+**Piani:** 100 seed preregistrati, 80 task di apprendimento + 40 di test.
+
+| Politica | Media test (0–1000) |
+| --- | ---: |
+| controllo0 | 335.2 |
+| memoria specifica per cue | **1000.0** |
+| memoria globale | 311.2 |
+| memoria mescolata | 328.5 |
+| scelta casuale | 358.5 |
+
+La memoria specifica per cue supera il controllo di **+664.8** milli-reward
+per run (IC 95% `[+660.2, +669.2]`, p = `1.98e-18`). La curva di
+apprendimento sale da `0.335` (0 task) a `0.696` (10), `0.870` (20),
+`0.980` (40) e `1.000` (80). Memoria globale, memoria mescolata e scelta
+casuale restano vicine al caso: l'effetto dipende dal cue corretto, non dalla
+distribuzione dei task.
+
 ## Servizio live
 
 - `initialize` ha restituito `serverInfo` `ariadne 0.5.0` e una sessione
@@ -75,8 +97,9 @@ ricostruite dal backend.
 - La semantica L1–L4 dell'intero log non è rigiocata da una seconda
   implementazione completa: l'indipendenza copre catena e fixture; la
   semantica è coperta dall'oracolo `aux_v2_small` su un altro scenario.
-- L6 è un esperimento sintetico separato: non dimostra l'efficacia causale
-  di L1–L5 e non autentica fatti o persone.
+- L6 e l'ablazione sono esperimenti sintetici: dimostrano l'efficacia della
+  memoria specifica per cue in questo corpus, non l'efficacia di L1–L5 su
+  dati reali, l'intelligenza generale o la verità delle dichiarazioni.
 - La suite Python è stata eseguita sull'host con Python 3.9.6; il container
   usa Python 3.11.2. La suite è verde in entrambi gli ambienti usati, ma non
   è una matrice di versioni.
