@@ -215,3 +215,58 @@ fn fixture_identifier_cannot_be_rebound_and_bad_anchor_rolls_back() {
     assert_eq!(log.observe(&bad),Err(Error::Reference));assert_eq!(log.to_jsonl(),before);
     log.verify(&[f]).unwrap();
 }
+
+#[test]
+fn ratified_l3_promote_order_is_origin_then_id_ascending() {
+    // Decisione ratificata 2026-11-05: dentro promote, origin_seq crescente
+    // e poi ID crescente. T=0 promuove entrambe le identità nello stesso
+    // giudizio, con la stessa origine.
+    let mut log=V2Log::genesis(1042).unwrap();
+    log.configure(3,5,0,10).unwrap();
+    let source=log.cycle().unwrap();
+    let extraction=log.extract(source,&[("elemento","gamma"),("elemento","alfa")],&[]).unwrap();
+    log.close_selection_window(extraction).unwrap();
+    log.evaluate_memory(extraction).unwrap();
+    let promoted:Vec<String>=log.events().iter().filter(|e| {
+        e.kind=="AUX" && e.payload.get("level").and_then(|j|j.string()).ok()==Some("L3")
+            && e.payload.get("kind").and_then(|j|j.string()).ok()==Some("promote")
+    }).map(|e| {
+        Json::parse(e.payload.get("data").unwrap().string().unwrap()).unwrap()
+            .get("id").unwrap().string().unwrap().to_owned()
+    }).collect();
+    let mut expected=vec![V2Log::node_id("elemento","alfa"),V2Log::node_id("elemento","gamma")];
+    expected.sort();
+    assert_eq!(promoted,expected);
+    log.verify(&[]).unwrap();
+}
+
+#[test]
+fn ratified_l3_archive_order_is_origin_descending() {
+    // Decisione ratificata 2026-11-05: dentro archive, origin_seq
+    // decrescente (poi ID decrescente). Al tick 27 entrambe le identità
+    // hanno punteggio zero; gamma ha origine successiva e viene prima.
+    let mut log=V2Log::genesis(1042).unwrap();
+    log.configure(3,5,1,1).unwrap();
+    let source=log.cycle().unwrap();
+    let e=log.extract(source,&[("elemento","alfa")],&[]).unwrap();
+    log.close_selection_window(e).unwrap();
+    log.evaluate_memory(e).unwrap();
+    let source=log.cycle().unwrap();
+    let e=log.extract(source,&[("elemento","gamma")],&[]).unwrap();
+    log.close_selection_window(e).unwrap();
+    log.evaluate_memory(e).unwrap();
+    for _ in 3..=27 {log.cycle().unwrap();}
+    let source=log.cycle().unwrap();
+    let e=log.extract(source,&[("elemento","delta")],&[]).unwrap();
+    log.close_selection_window(e).unwrap();
+    log.evaluate_memory(e).unwrap();
+    let archived:Vec<String>=log.events().iter().filter(|e| {
+        e.kind=="AUX" && e.payload.get("level").and_then(|j|j.string()).ok()==Some("L3")
+            && e.payload.get("kind").and_then(|j|j.string()).ok()==Some("archive")
+    }).map(|e| {
+        Json::parse(e.payload.get("data").unwrap().string().unwrap()).unwrap()
+            .get("id").unwrap().string().unwrap().to_owned()
+    }).collect();
+    assert_eq!(archived,vec![V2Log::node_id("elemento","gamma"),V2Log::node_id("elemento","alfa")]);
+    log.verify(&[]).unwrap();
+}
