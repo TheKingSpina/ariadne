@@ -30,6 +30,7 @@ verità o di efficacia causale.
 | Oracolo indipendente | `python3 preparazione_stress/aux_v2_oracle.py verify` | **ok**, 121 eventi, SHA-256 `690831b3…` |
 | Stress L0–L6 | `python3 preparazione_stress/esegui_stress_l0_l6.py` | **ok**, 847 eventi, SHA-256 `43accb3a…` |
 | Ablazione L6 | `python3 preparazione_stress/ablation_l6.py` | memoria cue **1000** vs controllo **335**; p = 1.98e-18 |
+| L0–L6 completo | `cargo run --release --locked --bin l0_l6_experiment` | pipeline AUX v2 **1000** vs **335.2**; replay **100/100**; p = 2.00e-18 |
 | Handshake MCP | initialize + tools/list + list_logs | **ok**, 14 tool, protocollo `2025-03-26` |
 | Dashboard | `/api/diagnostics` | archivio e MCP raggiungibili; conformità `not_verified` |
 | Backup | export + verify nel container | **ok**, 2 registri, 54 eventi, digest `e6cdc121…` |
@@ -77,6 +78,26 @@ apprendimento sale da `0.335` (0 task) a `0.696` (10), `0.870` (20),
 casuale restano vicine al caso: l'effetto dipende dal cue corretto, non dalla
 distribuzione dei task.
 
+## L0–L6 completo — pipeline AUX v2
+
+**Report:** `reports/L0_L6_FULL.md`
+**Esecuzione:** 100 seed, 80 task di apprendimento + 40 di test per seed.
+
+| Voce | Valore |
+| --- | ---: |
+| Memoria L5 (media per task) | **1000.0** |
+| Controllo0 (media per task) | **335.2** |
+| Δ per task | **+664.8** milli-reward |
+| Wilcoxon | W=5050.0, n=100, p=2.004e-18 |
+| Replay bit-perfetto | **100/100** |
+
+La pipeline completa L0–L5 gira su ogni seed: ciclo L0, estrazione L1,
+selezione L2, giudizio L3, narrazioni L4 e previsione L5. Il guadagno viene
+dalla memoria L5; L2 e L3 sono esercitati ma non modificano la previsione.
+L'ablazione con memoria semplice raggiunge lo stesso 1000/335: in questo
+corpus la pipeline completa **eguaglia** la memoria semplice, non la supera.
+Non è una prova su dati reali né di intelligenza generale.
+
 ## Servizio live
 
 - `initialize` ha restituito `serverInfo` `ariadne 0.5.0` e una sessione
@@ -97,9 +118,11 @@ distribuzione dei task.
 - La semantica L1–L4 dell'intero log non è rigiocata da una seconda
   implementazione completa: l'indipendenza copre catena e fixture; la
   semantica è coperta dall'oracolo `aux_v2_small` su un altro scenario.
-- L6 e l'ablazione sono esperimenti sintetici: dimostrano l'efficacia della
-  memoria specifica per cue in questo corpus, non l'efficacia di L1–L5 su
-  dati reali, l'intelligenza generale o la verità delle dichiarazioni.
+- L6, l'ablazione e il run L0–L6 completo sono esperimenti sintetici:
+  dimostrano l'efficacia della memoria specifica per cue in questo corpus,
+  non l'efficacia di L1–L5 su dati reali, l'intelligenza generale o la
+  verità delle dichiarazioni. L2/L3 non mostrano un contributo misurabile
+  in questo task.
 - La suite Python è stata eseguita sull'host con Python 3.9.6; il container
   usa Python 3.11.2. La suite è verde in entrambi gli ambienti usati, ma non
   è una matrice di versioni.
