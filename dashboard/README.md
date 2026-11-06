@@ -22,27 +22,29 @@ entrambi. I log figli sono prefissati `dashboard:`/`mcp:`.
 
 Nel container la stessa coppia di processi è avviata automaticamente dal
 `CMD` del Dockerfile. Il file `docker-compose.yml` riusa **esplicitamente** il
-volume esistente `ariadne-dashboard-data` (campo `name`) e il contenitore
+volume esistente `ariadne-data` (campo `name`) e il contenitore
 `ariadne` (`container_name`), così log e memorie attuali restano in
 uso senza creare un secondo volume. Per la build e le porte:
 
+Dalla directory principale del repository:
+
 ```sh
-docker compose -f dashboard/docker-compose.yml up -d --build
-docker compose -f dashboard/docker-compose.yml logs -f
-docker compose -f dashboard/docker-compose.yml down
+docker compose up --build -d
+docker compose logs -f
+docker compose down
 ```
 
 ### Migrazione una tantum dal contenitore creato a mano
 
 Il contenitore attuale creato manualmente va sostituito, senza toccare il
 volume: fermalo e rimuovilo, poi crea il contenitore compose che riusa
-`ariadne-dashboard-data` (log e memorie sono conservati nel volume, non nel
+`ariadne-data` (log e memorie sono conservati nel volume, non nel
 contenitore):
 
 ```sh
 docker stop ariadne
 docker rm ariadne
-cd dashboard && docker compose up -d --build
+cd /percorso/di/Ariadne && docker compose up --build -d
 ```
 
 Dopo la migrazione l'endpoint MCP risponde su `http://127.0.0.1:8080/mcp`
@@ -56,7 +58,7 @@ L'endpoint MCP su `http://127.0.0.1:8080/mcp` e `/healthz` è **solo test**:
 nessuna autenticazione client, CORS `*` (configurabile con
 `ARIADNE_MCP_ALLOW_ORIGIN`), header `Host` non controllato. Le porte sono
 pubblicate solo su `127.0.0.1`. Dettagli del protocollo HTTP in
-`mcp/README.md`. L'archivio resta nel volume `ariadne-dashboard-data`; non è
+`mcp/README.md`. L'archivio resta nel volume `ariadne-data`; non è
 una seconda istanza di dati. Fuori da Docker:
 
 ```sh

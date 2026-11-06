@@ -38,8 +38,8 @@ Con `docker compose` (o il supercluster `dashboard/supervisor.py`, vedi
 Il container unico può essere avviato da:
 
 ```sh
-docker compose -f dashboard/docker-compose.yml up -d --build
-docker compose -f dashboard/docker-compose.yml down
+docker compose up --build -d
+docker compose down
 ```
 
 oppure, fuori da Docker, con `python3 dashboard/supervisor.py` che avvia

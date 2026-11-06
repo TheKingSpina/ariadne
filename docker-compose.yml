@@ -4,14 +4,14 @@ services:
   ariadne:
     container_name: ariadne
     build:
-      context: ..
+      context: .
       dockerfile: dashboard/Dockerfile
-    image: ariadne-dashboard-local
+    image: ariadne
     ports:
       - "127.0.0.1:8080:8080"
       - "127.0.0.1:8090:8090"
     volumes:
-      - ariadne-dashboard-data:/data
+      - ariadne-data:/data
     restart: unless-stopped
     stop_grace_period: 20s
     init: true
@@ -23,5 +23,5 @@ services:
       start_period: 15s
 
 volumes:
-  ariadne-dashboard-data:
-    name: ariadne-dashboard-data
+  ariadne-data:
+    name: ariadne-data
