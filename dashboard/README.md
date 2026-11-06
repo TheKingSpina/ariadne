@@ -23,7 +23,7 @@ entrambi. I log figli sono prefissati `dashboard:`/`mcp:`.
 Nel container la stessa coppia di processi è avviata automaticamente dal
 `CMD` del Dockerfile. Il file `docker-compose.yml` riusa **esplicitamente** il
 volume esistente `ariadne-dashboard-data` (campo `name`) e il contenitore
-`ariadne-dashboard` (`container_name`), così log e memorie attuali restano in
+`ariadne` (`container_name`), così log e memorie attuali restano in
 uso senza creare un secondo volume. Per la build e le porte:
 
 ```sh
@@ -40,8 +40,8 @@ volume: fermalo e rimuovilo, poi crea il contenitore compose che riusa
 contenitore):
 
 ```sh
-docker stop ariadne-dashboard
-docker rm ariadne-dashboard
+docker stop ariadne
+docker rm ariadne
 cd dashboard && docker compose up -d --build
 ```
 
@@ -198,7 +198,7 @@ contiene archi, nessun collegamento viene inventato.
 Per ottenere il token generato all'avvio del container:
 
 ```sh
-docker exec ariadne-dashboard cat /data/.write-token
+docker exec ariadne cat /data/.write-token
 ```
 
 Nei log il token non viene stampato: compare solo un'impronta SHA-256 troncata

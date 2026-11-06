@@ -1,8 +1,8 @@
 # Solo ambiente di test locale: nessuna autenticazione client, CORS aperto
 # sull'endpoint MCP. Le porte restano vincolate a 127.0.0.1.
 services:
-  ariadne-dashboard:
-    container_name: ariadne-dashboard
+  ariadne:
+    container_name: ariadne
     build:
       context: ..
       dockerfile: dashboard/Dockerfile

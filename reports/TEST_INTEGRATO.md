@@ -17,7 +17,7 @@ verità o di efficacia causale.
 | Python container | 3.11.2 |
 | Docker | 29.6.1 |
 | Docker Compose | 5.5.0 |
-| Container | `ariadne-dashboard`, healthy |
+| Container | `ariadne` (all'epoca `ariadne-dashboard`), healthy |
 | Dashboard | `http://127.0.0.1:8090` |
 | MCP | `http://127.0.0.1:8080/mcp` |
 
